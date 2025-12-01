@@ -1,36 +1,37 @@
-import { useEffect, useRef, useState } from 'react';
-import { ArSdk } from 'tencentcloud-webar';
-import { getSignature } from '../utils/auth';
-import './QweenMirror.css';
+import { useEffect, useRef, useState } from "react";
+import { ArSdk } from "tencentcloud-webar";
+import { getSignature } from "../utils/auth";
+import "./QweenMirror.css";
 
 interface BeautySettings {
   // Basic (always available)
-  whiten: number;           // brightening
-  dermabrasion: number;     // smooth skin
-  lift: number;             // slim face
-  shave: number;            // face width (V shape)
-  eye: number;              // big eyes
-  chin: number;             // chin
+  whiten: number; // brightening
+  dermabrasion: number; // smooth skin
+  lift: number; // slim face
+  shave: number; // face width (V shape)
+  eye: number; // big eyes
+  chin: number; // chin
   // Advanced (v1.0.11+)
-  darkCircle: number;       // dark circle removal
-  nasolabialFolds: number;  // nasolabial folds
-  cheekbone: number;        // cheek bone
-  head: number;             // head size (small head)
-  eyeBrightness: number;    // eye brightness
-  lip: number;              // lip enhancement
-  forehead: number;         // forehead
-  nose: number;             // nose
-  usm: number;              // distinct/sharpness
+  darkCircle: number; // dark circle removal
+  nasolabialFolds: number; // nasolabial folds
+  cheekbone: number; // cheek bone
+  head: number; // head size (small head)
+  eyeBrightness: number; // eye brightness
+  lip: number; // lip enhancement
+  forehead: number; // forehead
+  nose: number; // nose
+  usm: number; // distinct/sharpness
 }
 
 const QweenMirror = () => {
   const videoRef = useRef<HTMLVideoElement>(null);
   const arRef = useRef<ArSdk | null>(null);
+  const initRef = useRef(false);
   const [isLoading, setIsLoading] = useState(true);
-  const [error, setError] = useState<string>('');
+  const [error, setError] = useState<string>("");
   const [isEnabled, setIsEnabled] = useState(true);
   const [isPanelVisible, setIsPanelVisible] = useState(true);
-  
+
   const [beautySettings, setBeautySettings] = useState<BeautySettings>({
     whiten: 30,
     dermabrasion: 50,
@@ -55,17 +56,21 @@ const QweenMirror = () => {
     const TOKEN = import.meta.env.VITE_TENCENT_SECRET_KEY;
 
     if (!APPID || !LICENSE_KEY || !TOKEN) {
-      setError('Please configure your Tencent AR credentials in .env file');
+      setError("Please configure your Tencent AR credentials in .env file");
       setIsLoading(false);
       return;
     }
 
     const initAR = async () => {
+      // Prevent double initialization in React Strict Mode
+      if (initRef.current) return;
+      initRef.current = true;
+
       try {
-        // Detect if mobile device
+        // Detect device type for appropriate camera resolution
         const isMobile = /iPhone|iPad|iPod|Android/i.test(navigator.userAgent);
-        
-        // Use portrait for mobile, landscape for desktop
+
+        // Use standard resolutions that work well
         const cameraWidth = isMobile ? 720 : 1280;
         const cameraHeight = isMobile ? 1280 : 720;
 
@@ -105,14 +110,14 @@ const QweenMirror = () => {
 
         arRef.current = ar;
 
-        ar.on('created', () => {
-          console.log('AR SDK created');
+        ar.on("created", () => {
+          console.log("AR SDK created");
         });
 
-        ar.on('ready', async () => {
-          console.log('AR SDK ready');
+        ar.on("ready", async () => {
+          console.log("AR SDK ready");
           setIsLoading(false);
-          
+
           const mediaStream = await ar.getOutput();
           if (videoRef.current) {
             videoRef.current.srcObject = mediaStream;
@@ -120,14 +125,18 @@ const QweenMirror = () => {
           }
         });
 
-        ar.on('error', (e: any) => {
-          console.error('AR SDK error:', e);
-          setError(`AR SDK Error: ${e.message || 'Unknown error'}`);
+        ar.on("error", (e: any) => {
+          console.error("AR SDK error:", e);
+          setError(`AR SDK Error: ${e.message || "Unknown error"}`);
           setIsLoading(false);
         });
       } catch (err) {
-        console.error('Failed to initialize AR SDK:', err);
-        setError(`Initialization failed: ${err instanceof Error ? err.message : 'Unknown error'}`);
+        console.error("Failed to initialize AR SDK:", err);
+        setError(
+          `Initialization failed: ${
+            err instanceof Error ? err.message : "Unknown error"
+          }`
+        );
         setIsLoading(false);
       }
     };
@@ -135,6 +144,7 @@ const QweenMirror = () => {
     initAR();
 
     return () => {
+      initRef.current = false;
       if (arRef.current) {
         arRef.current = null;
       }
@@ -142,34 +152,38 @@ const QweenMirror = () => {
   }, []);
 
   const updateBeauty = (key: keyof BeautySettings, value: number) => {
-    setBeautySettings(prev => ({ ...prev, [key]: value }));
-    
-    if (arRef.current && isEnabled) {
-      const newSettings = { ...beautySettings, [key]: value };
-      arRef.current.setBeautify({
-        whiten: newSettings.whiten / 100,
-        dermabrasion: newSettings.dermabrasion / 100,
-        lift: newSettings.lift / 100,
-        shave: newSettings.shave / 100,
-        eye: newSettings.eye / 100,
-        chin: newSettings.chin / 100,
-        darkCircle: newSettings.darkCircle / 100,
-        nasolabialFolds: newSettings.nasolabialFolds / 100,
-        cheekbone: newSettings.cheekbone / 100,
-        head: newSettings.head / 100,
-        eyeBrightness: newSettings.eyeBrightness / 100,
-        lip: newSettings.lip / 100,
-        forehead: newSettings.forehead / 100,
-        nose: newSettings.nose / 100,
-        usm: newSettings.usm / 100,
-      });
-    }
+    setBeautySettings((prev) => {
+      const newSettings = { ...prev, [key]: value };
+
+      // Update AR SDK with new settings immediately
+      if (arRef.current && isEnabled) {
+        arRef.current.setBeautify({
+          whiten: newSettings.whiten / 100,
+          dermabrasion: newSettings.dermabrasion / 100,
+          lift: newSettings.lift / 100,
+          shave: newSettings.shave / 100,
+          eye: newSettings.eye / 100,
+          chin: newSettings.chin / 100,
+          darkCircle: newSettings.darkCircle / 100,
+          nasolabialFolds: newSettings.nasolabialFolds / 100,
+          cheekbone: newSettings.cheekbone / 100,
+          head: newSettings.head / 100,
+          eyeBrightness: newSettings.eyeBrightness / 100,
+          lip: newSettings.lip / 100,
+          forehead: newSettings.forehead / 100,
+          nose: newSettings.nose / 100,
+          usm: newSettings.usm / 100,
+        });
+      }
+
+      return newSettings;
+    });
   };
 
   const handleToggle = () => {
     const newState = !isEnabled;
     setIsEnabled(newState);
-    
+
     if (arRef.current) {
       if (newState) {
         arRef.current.setBeautify({
@@ -230,7 +244,7 @@ const QweenMirror = () => {
       usm: 0,
     };
     setBeautySettings(resetSettings);
-    
+
     if (arRef.current && isEnabled) {
       arRef.current.setBeautify({
         whiten: 0.3,
@@ -260,20 +274,20 @@ const QweenMirror = () => {
           <p>Initializing AR...</p>
         </div>
       )}
-      
+
       {error && (
         <div className="error">
           <h2>Error</h2>
           <p>{error}</p>
         </div>
       )}
-      
+
       <video
         ref={videoRef}
         className="mirror-video"
         playsInline
         crossOrigin="anonymous"
-        style={{ display: isLoading || error ? 'none' : 'block' }}
+        style={{ display: isLoading || error ? "none" : "block" }}
       />
 
       {!isLoading && !error && (
@@ -285,7 +299,11 @@ const QweenMirror = () => {
                   <div className="toggle-group">
                     <span className="toggle-label">On-Off</span>
                     <label className="toggle-switch">
-                      <input type="checkbox" checked={isEnabled} onChange={handleToggle} />
+                      <input
+                        type="checkbox"
+                        checked={isEnabled}
+                        onChange={handleToggle}
+                      />
                       <span className="slider"></span>
                     </label>
                   </div>
@@ -311,7 +329,9 @@ const QweenMirror = () => {
                     min="0"
                     max="100"
                     value={beautySettings.whiten}
-                    onChange={(e) => updateBeauty('whiten', Number(e.target.value))}
+                    onChange={(e) =>
+                      updateBeauty("whiten", Number(e.target.value))
+                    }
                   />
                   <span className="value">{beautySettings.whiten}</span>
                 </div>
@@ -322,7 +342,9 @@ const QweenMirror = () => {
                     min="0"
                     max="100"
                     value={beautySettings.dermabrasion}
-                    onChange={(e) => updateBeauty('dermabrasion', Number(e.target.value))}
+                    onChange={(e) =>
+                      updateBeauty("dermabrasion", Number(e.target.value))
+                    }
                   />
                   <span className="value">{beautySettings.dermabrasion}</span>
                 </div>
@@ -333,9 +355,13 @@ const QweenMirror = () => {
                     min="0"
                     max="100"
                     value={beautySettings.nasolabialFolds}
-                    onChange={(e) => updateBeauty('nasolabialFolds', Number(e.target.value))}
+                    onChange={(e) =>
+                      updateBeauty("nasolabialFolds", Number(e.target.value))
+                    }
                   />
-                  <span className="value">{beautySettings.nasolabialFolds}</span>
+                  <span className="value">
+                    {beautySettings.nasolabialFolds}
+                  </span>
                 </div>
                 <div className="slider-group">
                   <label>Sharpness</label>
@@ -344,7 +370,9 @@ const QweenMirror = () => {
                     min="0"
                     max="100"
                     value={beautySettings.usm}
-                    onChange={(e) => updateBeauty('usm', Number(e.target.value))}
+                    onChange={(e) =>
+                      updateBeauty("usm", Number(e.target.value))
+                    }
                   />
                   <span className="value">{beautySettings.usm}</span>
                 </div>
@@ -358,7 +386,9 @@ const QweenMirror = () => {
                     min="0"
                     max="100"
                     value={beautySettings.cheekbone}
-                    onChange={(e) => updateBeauty('cheekbone', Number(e.target.value))}
+                    onChange={(e) =>
+                      updateBeauty("cheekbone", Number(e.target.value))
+                    }
                   />
                   <span className="value">{beautySettings.cheekbone}</span>
                 </div>
@@ -369,7 +399,9 @@ const QweenMirror = () => {
                     min="0"
                     max="100"
                     value={beautySettings.lift}
-                    onChange={(e) => updateBeauty('lift', Number(e.target.value))}
+                    onChange={(e) =>
+                      updateBeauty("lift", Number(e.target.value))
+                    }
                   />
                   <span className="value">{beautySettings.lift}</span>
                 </div>
@@ -380,7 +412,9 @@ const QweenMirror = () => {
                     min="0"
                     max="100"
                     value={beautySettings.shave}
-                    onChange={(e) => updateBeauty('shave', Number(e.target.value))}
+                    onChange={(e) =>
+                      updateBeauty("shave", Number(e.target.value))
+                    }
                   />
                   <span className="value">{beautySettings.shave}</span>
                 </div>
@@ -391,7 +425,9 @@ const QweenMirror = () => {
                     min="0"
                     max="100"
                     value={beautySettings.forehead}
-                    onChange={(e) => updateBeauty('forehead', Number(e.target.value))}
+                    onChange={(e) =>
+                      updateBeauty("forehead", Number(e.target.value))
+                    }
                   />
                   <span className="value">{beautySettings.forehead}</span>
                 </div>
@@ -402,7 +438,9 @@ const QweenMirror = () => {
                     min="0"
                     max="100"
                     value={beautySettings.head}
-                    onChange={(e) => updateBeauty('head', Number(e.target.value))}
+                    onChange={(e) =>
+                      updateBeauty("head", Number(e.target.value))
+                    }
                   />
                   <span className="value">{beautySettings.head}</span>
                 </div>
@@ -416,7 +454,9 @@ const QweenMirror = () => {
                     min="0"
                     max="100"
                     value={beautySettings.lip}
-                    onChange={(e) => updateBeauty('lip', Number(e.target.value))}
+                    onChange={(e) =>
+                      updateBeauty("lip", Number(e.target.value))
+                    }
                   />
                   <span className="value">{beautySettings.lip}</span>
                 </div>
@@ -427,7 +467,9 @@ const QweenMirror = () => {
                     min="0"
                     max="100"
                     value={beautySettings.nose}
-                    onChange={(e) => updateBeauty('nose', Number(e.target.value))}
+                    onChange={(e) =>
+                      updateBeauty("nose", Number(e.target.value))
+                    }
                   />
                   <span className="value">{beautySettings.nose}</span>
                 </div>
@@ -438,7 +480,9 @@ const QweenMirror = () => {
                     min="0"
                     max="100"
                     value={beautySettings.eye}
-                    onChange={(e) => updateBeauty('eye', Number(e.target.value))}
+                    onChange={(e) =>
+                      updateBeauty("eye", Number(e.target.value))
+                    }
                   />
                   <span className="value">{beautySettings.eye}</span>
                 </div>
@@ -449,7 +493,9 @@ const QweenMirror = () => {
                     min="0"
                     max="100"
                     value={beautySettings.eyeBrightness}
-                    onChange={(e) => updateBeauty('eyeBrightness', Number(e.target.value))}
+                    onChange={(e) =>
+                      updateBeauty("eyeBrightness", Number(e.target.value))
+                    }
                   />
                   <span className="value">{beautySettings.eyeBrightness}</span>
                 </div>
@@ -460,7 +506,9 @@ const QweenMirror = () => {
                     min="0"
                     max="100"
                     value={beautySettings.darkCircle}
-                    onChange={(e) => updateBeauty('darkCircle', Number(e.target.value))}
+                    onChange={(e) =>
+                      updateBeauty("darkCircle", Number(e.target.value))
+                    }
                   />
                   <span className="value">{beautySettings.darkCircle}</span>
                 </div>
@@ -471,7 +519,9 @@ const QweenMirror = () => {
                     min="0"
                     max="100"
                     value={beautySettings.chin}
-                    onChange={(e) => updateBeauty('chin', Number(e.target.value))}
+                    onChange={(e) =>
+                      updateBeauty("chin", Number(e.target.value))
+                    }
                   />
                   <span className="value">{beautySettings.chin}</span>
                 </div>
@@ -479,12 +529,12 @@ const QweenMirror = () => {
             </div>
           )}
 
-          <button 
+          <button
             className="panel-toggle-btn"
             onClick={() => setIsPanelVisible(!isPanelVisible)}
             title={isPanelVisible ? "Hide controls" : "Show controls"}
           >
-            {isPanelVisible ? '✕' : '⚙'}
+            {isPanelVisible ? "✕" : "⚙"}
           </button>
         </>
       )}
