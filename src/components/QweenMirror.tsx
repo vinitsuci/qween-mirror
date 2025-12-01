@@ -29,6 +29,7 @@ const QweenMirror = () => {
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState<string>('');
   const [isEnabled, setIsEnabled] = useState(true);
+  const [isPanelVisible, setIsPanelVisible] = useState(true);
   
   const [beautySettings, setBeautySettings] = useState<BeautySettings>({
     whiten: 30,
@@ -269,204 +270,216 @@ const QweenMirror = () => {
       />
 
       {!isLoading && !error && (
-        <div className="controls-panel">
-          <div className="panel-header">
-            <div className="header-controls">
-              <div className="toggle-group">
-                <span className="toggle-label">On-Off</span>
-                <label className="toggle-switch">
-                  <input type="checkbox" checked={isEnabled} onChange={handleToggle} />
-                  <span className="slider"></span>
-                </label>
+        <>
+          {isPanelVisible && (
+            <div className="controls-panel">
+              <div className="panel-header">
+                <div className="header-controls">
+                  <div className="toggle-group">
+                    <span className="toggle-label">On-Off</span>
+                    <label className="toggle-switch">
+                      <input type="checkbox" checked={isEnabled} onChange={handleToggle} />
+                      <span className="slider"></span>
+                    </label>
+                  </div>
+                  <button className="reset-btn" onClick={handleReset}>
+                    ↻ Reset
+                  </button>
+                </div>
               </div>
-              <button className="reset-btn" onClick={handleReset}>
-                ↻ Reset
-              </button>
-            </div>
-          </div>
 
-          <div className="tabs">
-            <div className="section-title">Skin</div>
-            <div className="section-title">Shape</div>
-            <div className="section-title">Features</div>
-          </div>
+              <div className="tabs">
+                <div className="section-title">Skin</div>
+                <div className="section-title">Shape</div>
+                <div className="section-title">Features</div>
+              </div>
 
-          <div className="sliders-container">
-            {/* Skin Section */}
-            <div className="section-header">Skin</div>
-            <div className="slider-group">
-              <label>Whiten</label>
-              <input
-                type="range"
-                min="0"
-                max="100"
-                value={beautySettings.whiten}
-                onChange={(e) => updateBeauty('whiten', Number(e.target.value))}
-              />
-              <span className="value">{beautySettings.whiten}</span>
-            </div>
-            <div className="slider-group">
-              <label>Smooth</label>
-              <input
-                type="range"
-                min="0"
-                max="100"
-                value={beautySettings.dermabrasion}
-                onChange={(e) => updateBeauty('dermabrasion', Number(e.target.value))}
-              />
-              <span className="value">{beautySettings.dermabrasion}</span>
-            </div>
-            <div className="slider-group">
-              <label>Nasolabial Folds</label>
-              <input
-                type="range"
-                min="0"
-                max="100"
-                value={beautySettings.nasolabialFolds}
-                onChange={(e) => updateBeauty('nasolabialFolds', Number(e.target.value))}
-              />
-              <span className="value">{beautySettings.nasolabialFolds}</span>
-            </div>
-            <div className="slider-group">
-              <label>Sharpness</label>
-              <input
-                type="range"
-                min="0"
-                max="100"
-                value={beautySettings.usm}
-                onChange={(e) => updateBeauty('usm', Number(e.target.value))}
-              />
-              <span className="value">{beautySettings.usm}</span>
-            </div>
+              <div className="sliders-container">
+                {/* Skin Section */}
+                <div className="section-header">Skin</div>
+                <div className="slider-group">
+                  <label>Whiten</label>
+                  <input
+                    type="range"
+                    min="0"
+                    max="100"
+                    value={beautySettings.whiten}
+                    onChange={(e) => updateBeauty('whiten', Number(e.target.value))}
+                  />
+                  <span className="value">{beautySettings.whiten}</span>
+                </div>
+                <div className="slider-group">
+                  <label>Smooth</label>
+                  <input
+                    type="range"
+                    min="0"
+                    max="100"
+                    value={beautySettings.dermabrasion}
+                    onChange={(e) => updateBeauty('dermabrasion', Number(e.target.value))}
+                  />
+                  <span className="value">{beautySettings.dermabrasion}</span>
+                </div>
+                <div className="slider-group">
+                  <label>Nasolabial Folds</label>
+                  <input
+                    type="range"
+                    min="0"
+                    max="100"
+                    value={beautySettings.nasolabialFolds}
+                    onChange={(e) => updateBeauty('nasolabialFolds', Number(e.target.value))}
+                  />
+                  <span className="value">{beautySettings.nasolabialFolds}</span>
+                </div>
+                <div className="slider-group">
+                  <label>Sharpness</label>
+                  <input
+                    type="range"
+                    min="0"
+                    max="100"
+                    value={beautySettings.usm}
+                    onChange={(e) => updateBeauty('usm', Number(e.target.value))}
+                  />
+                  <span className="value">{beautySettings.usm}</span>
+                </div>
 
-            {/* Shape Section */}
-            <div className="section-header">Shape</div>
-            <div className="slider-group">
-              <label>Cheekbone</label>
-              <input
-                type="range"
-                min="0"
-                max="100"
-                value={beautySettings.cheekbone}
-                onChange={(e) => updateBeauty('cheekbone', Number(e.target.value))}
-              />
-              <span className="value">{beautySettings.cheekbone}</span>
-            </div>
-            <div className="slider-group">
-              <label>Slim face</label>
-              <input
-                type="range"
-                min="0"
-                max="100"
-                value={beautySettings.lift}
-                onChange={(e) => updateBeauty('lift', Number(e.target.value))}
-              />
-              <span className="value">{beautySettings.lift}</span>
-            </div>
-            <div className="slider-group">
-              <label>V shape</label>
-              <input
-                type="range"
-                min="0"
-                max="100"
-                value={beautySettings.shave}
-                onChange={(e) => updateBeauty('shave', Number(e.target.value))}
-              />
-              <span className="value">{beautySettings.shave}</span>
-            </div>
-            <div className="slider-group">
-              <label>Forehead</label>
-              <input
-                type="range"
-                min="0"
-                max="100"
-                value={beautySettings.forehead}
-                onChange={(e) => updateBeauty('forehead', Number(e.target.value))}
-              />
-              <span className="value">{beautySettings.forehead}</span>
-            </div>
-            <div className="slider-group">
-              <label>Small Head</label>
-              <input
-                type="range"
-                min="0"
-                max="100"
-                value={beautySettings.head}
-                onChange={(e) => updateBeauty('head', Number(e.target.value))}
-              />
-              <span className="value">{beautySettings.head}</span>
-            </div>
+                {/* Shape Section */}
+                <div className="section-header">Shape</div>
+                <div className="slider-group">
+                  <label>Cheekbone</label>
+                  <input
+                    type="range"
+                    min="0"
+                    max="100"
+                    value={beautySettings.cheekbone}
+                    onChange={(e) => updateBeauty('cheekbone', Number(e.target.value))}
+                  />
+                  <span className="value">{beautySettings.cheekbone}</span>
+                </div>
+                <div className="slider-group">
+                  <label>Slim face</label>
+                  <input
+                    type="range"
+                    min="0"
+                    max="100"
+                    value={beautySettings.lift}
+                    onChange={(e) => updateBeauty('lift', Number(e.target.value))}
+                  />
+                  <span className="value">{beautySettings.lift}</span>
+                </div>
+                <div className="slider-group">
+                  <label>V shape</label>
+                  <input
+                    type="range"
+                    min="0"
+                    max="100"
+                    value={beautySettings.shave}
+                    onChange={(e) => updateBeauty('shave', Number(e.target.value))}
+                  />
+                  <span className="value">{beautySettings.shave}</span>
+                </div>
+                <div className="slider-group">
+                  <label>Forehead</label>
+                  <input
+                    type="range"
+                    min="0"
+                    max="100"
+                    value={beautySettings.forehead}
+                    onChange={(e) => updateBeauty('forehead', Number(e.target.value))}
+                  />
+                  <span className="value">{beautySettings.forehead}</span>
+                </div>
+                <div className="slider-group">
+                  <label>Small Head</label>
+                  <input
+                    type="range"
+                    min="0"
+                    max="100"
+                    value={beautySettings.head}
+                    onChange={(e) => updateBeauty('head', Number(e.target.value))}
+                  />
+                  <span className="value">{beautySettings.head}</span>
+                </div>
 
-            {/* Features Section */}
-            <div className="section-header">Features</div>
-            <div className="slider-group">
-              <label>Lip</label>
-              <input
-                type="range"
-                min="0"
-                max="100"
-                value={beautySettings.lip}
-                onChange={(e) => updateBeauty('lip', Number(e.target.value))}
-              />
-              <span className="value">{beautySettings.lip}</span>
+                {/* Features Section */}
+                <div className="section-header">Features</div>
+                <div className="slider-group">
+                  <label>Lip</label>
+                  <input
+                    type="range"
+                    min="0"
+                    max="100"
+                    value={beautySettings.lip}
+                    onChange={(e) => updateBeauty('lip', Number(e.target.value))}
+                  />
+                  <span className="value">{beautySettings.lip}</span>
+                </div>
+                <div className="slider-group">
+                  <label>Nose</label>
+                  <input
+                    type="range"
+                    min="0"
+                    max="100"
+                    value={beautySettings.nose}
+                    onChange={(e) => updateBeauty('nose', Number(e.target.value))}
+                  />
+                  <span className="value">{beautySettings.nose}</span>
+                </div>
+                <div className="slider-group">
+                  <label>Big eyes</label>
+                  <input
+                    type="range"
+                    min="0"
+                    max="100"
+                    value={beautySettings.eye}
+                    onChange={(e) => updateBeauty('eye', Number(e.target.value))}
+                  />
+                  <span className="value">{beautySettings.eye}</span>
+                </div>
+                <div className="slider-group">
+                  <label>Eye Brightness</label>
+                  <input
+                    type="range"
+                    min="0"
+                    max="100"
+                    value={beautySettings.eyeBrightness}
+                    onChange={(e) => updateBeauty('eyeBrightness', Number(e.target.value))}
+                  />
+                  <span className="value">{beautySettings.eyeBrightness}</span>
+                </div>
+                <div className="slider-group">
+                  <label>Dark Circle</label>
+                  <input
+                    type="range"
+                    min="0"
+                    max="100"
+                    value={beautySettings.darkCircle}
+                    onChange={(e) => updateBeauty('darkCircle', Number(e.target.value))}
+                  />
+                  <span className="value">{beautySettings.darkCircle}</span>
+                </div>
+                <div className="slider-group">
+                  <label>Chin</label>
+                  <input
+                    type="range"
+                    min="0"
+                    max="100"
+                    value={beautySettings.chin}
+                    onChange={(e) => updateBeauty('chin', Number(e.target.value))}
+                  />
+                  <span className="value">{beautySettings.chin}</span>
+                </div>
+              </div>
             </div>
-            <div className="slider-group">
-              <label>Nose</label>
-              <input
-                type="range"
-                min="0"
-                max="100"
-                value={beautySettings.nose}
-                onChange={(e) => updateBeauty('nose', Number(e.target.value))}
-              />
-              <span className="value">{beautySettings.nose}</span>
-            </div>
-            <div className="slider-group">
-              <label>Big eyes</label>
-              <input
-                type="range"
-                min="0"
-                max="100"
-                value={beautySettings.eye}
-                onChange={(e) => updateBeauty('eye', Number(e.target.value))}
-              />
-              <span className="value">{beautySettings.eye}</span>
-            </div>
-            <div className="slider-group">
-              <label>Eye Brightness</label>
-              <input
-                type="range"
-                min="0"
-                max="100"
-                value={beautySettings.eyeBrightness}
-                onChange={(e) => updateBeauty('eyeBrightness', Number(e.target.value))}
-              />
-              <span className="value">{beautySettings.eyeBrightness}</span>
-            </div>
-            <div className="slider-group">
-              <label>Dark Circle</label>
-              <input
-                type="range"
-                min="0"
-                max="100"
-                value={beautySettings.darkCircle}
-                onChange={(e) => updateBeauty('darkCircle', Number(e.target.value))}
-              />
-              <span className="value">{beautySettings.darkCircle}</span>
-            </div>
-            <div className="slider-group">
-              <label>Chin</label>
-              <input
-                type="range"
-                min="0"
-                max="100"
-                value={beautySettings.chin}
-                onChange={(e) => updateBeauty('chin', Number(e.target.value))}
-              />
-              <span className="value">{beautySettings.chin}</span>
-            </div>
-          </div>
-        </div>
+          )}
+
+          <button 
+            className="panel-toggle-btn"
+            onClick={() => setIsPanelVisible(!isPanelVisible)}
+            title={isPanelVisible ? "Hide controls" : "Show controls"}
+          >
+            {isPanelVisible ? '✕' : '⚙'}
+          </button>
+        </>
       )}
     </div>
   );

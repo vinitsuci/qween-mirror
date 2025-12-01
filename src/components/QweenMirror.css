@@ -265,3 +265,34 @@ input:checked + .slider:before {
 .sliders-container::-webkit-scrollbar-thumb:hover {
   background: #999;
 }
+
+/* Panel Toggle Button */
+.panel-toggle-btn {
+  position: fixed;
+  bottom: 24px;
+  right: 24px;
+  width: 56px;
+  height: 56px;
+  border-radius: 50%;
+  background: #2196F3;
+  color: white;
+  border: none;
+  font-size: 24px;
+  cursor: pointer;
+  box-shadow: 0 4px 12px rgba(33, 150, 243, 0.4);
+  transition: all 0.3s ease;
+  z-index: 10;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.panel-toggle-btn:hover {
+  background: #1976D2;
+  transform: scale(1.1);
+  box-shadow: 0 6px 16px rgba(33, 150, 243, 0.5);
+}
+
+.panel-toggle-btn:active {
+  transform: scale(0.95);
+}
