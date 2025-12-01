@@ -62,6 +62,13 @@ const QweenMirror = () => {
 
     const initAR = async () => {
       try {
+        // Detect if mobile device
+        const isMobile = /iPhone|iPad|iPod|Android/i.test(navigator.userAgent);
+        
+        // Use portrait for mobile, landscape for desktop
+        const cameraWidth = isMobile ? 720 : 1280;
+        const cameraHeight = isMobile ? 1280 : 720;
+
         const ar = new ArSdk({
           auth: {
             authFunc: () => getSignature(APPID, TOKEN),
@@ -69,8 +76,8 @@ const QweenMirror = () => {
             licenseKey: LICENSE_KEY,
           },
           camera: {
-            width: 1280,
-            height: 720,
+            width: cameraWidth,
+            height: cameraHeight,
             mirror: true,
           },
           loading: {

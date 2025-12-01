@@ -296,3 +296,67 @@ input:checked + .slider:before {
 .panel-toggle-btn:active {
   transform: scale(0.95);
 }
+
+/* Mobile Responsive Styles */
+@media (max-width: 768px) {
+  .controls-panel {
+    width: 100%;
+    height: 60vh;
+    right: auto;
+    left: 0;
+    bottom: 0;
+    top: auto;
+    border-radius: 20px 20px 0 0;
+    box-shadow: 0 -4px 20px rgba(0, 0, 0, 0.15);
+  }
+
+  .panel-header {
+    padding: 16px;
+  }
+
+  .header-controls {
+    flex-direction: row;
+    justify-content: space-between;
+  }
+
+  .toggle-label {
+    font-size: 13px;
+  }
+
+  .sliders-container {
+    padding: 16px;
+  }
+
+  .slider-group {
+    margin-bottom: 16px;
+  }
+
+  .slider-group label {
+    min-width: 90px;
+    font-size: 13px;
+  }
+
+  .slider-group .value {
+    min-width: 25px;
+    font-size: 13px;
+  }
+
+  .section-header {
+    font-size: 15px;
+    margin-top: 20px;
+    margin-bottom: 10px;
+  }
+
+  .panel-toggle-btn {
+    bottom: 16px;
+    right: 16px;
+    width: 48px;
+    height: 48px;
+    font-size: 20px;
+  }
+
+  /* When panel is visible, move button above it */
+  .controls-panel ~ .panel-toggle-btn {
+    bottom: calc(60vh + 16px);
+  }
+}
