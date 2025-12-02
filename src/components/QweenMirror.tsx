@@ -67,109 +67,137 @@ const QweenMirror = () => {
       initRef.current = true;
 
       try {
-        // Detect the best supported camera resolution
-        let cameraWidth = 640;
-        let cameraHeight = 480;
+        // Detect device type
+        const isMobile = /iPhone|iPad|iPod|Android/i.test(navigator.userAgent);
+        
+        let cameraWidth = isMobile ? 480 : 1280;
+        let cameraHeight = isMobile ? 640 : 720;
 
         try {
-          // Try to get camera capabilities to determine best resolution
-          // Request 1080p as ideal - camera will provide its best supported resolution
-          const stream = await navigator.mediaDevices.getUserMedia({
-            video: { width: { ideal: 1920 }, height: { ideal: 1080 } },
-          });
-
-          const videoTrack = stream.getVideoTracks()[0];
-          const settings = videoTrack.getSettings();
-
-          // Use the EXACT resolution the camera provides (including orientation)
-          // Mobile/tablet cameras often provide portrait (e.g., 1080x1920)
-          // Desktop cameras provide landscape (e.g., 1920x1080)
+          // Check actual camera capabilities
+          const constraints = {
+            video: {
+              width: { ideal: isMobile ? 1080 : 1920 },
+              height: { ideal: isMobile ? 1920 : 1080 },
+              facingMode: isMobile ? "user" : undefined,
+            },
+            audio: false,
+          };
+          
+          console.log("Detecting camera capabilities...");
+          const stream = await navigator.mediaDevices.getUserMedia(constraints);
+          const track = stream.getVideoTracks()[0];
+          const settings = track.getSettings();
+          
           if (settings.width && settings.height) {
             cameraWidth = settings.width;
             cameraHeight = settings.height;
-            console.log(
-              `Using camera resolution: ${cameraWidth}x${cameraHeight}`
-            );
+            console.log(`Detected camera resolution: ${cameraWidth}x${cameraHeight}`);
           }
-
-          // Stop the test stream
-          stream.getTracks().forEach((track) => track.stop());
-        } catch (testError) {
-          console.warn(
-            "Could not detect camera capabilities, using VGA (640x480)",
-            testError
-          );
-          // Fallback to VGA if detection fails
-          cameraWidth = 640;
-          cameraHeight = 480;
+          
+          // CRITICAL: Stop the track to release camera before SDK uses it
+          track.stop();
+          stream.getTracks().forEach(t => t.stop());
+          
+          // Small delay to ensure camera is released
+          await new Promise(resolve => setTimeout(resolve, 100));
+          
+        } catch (e) {
+          console.warn("Failed to detect camera resolution, using defaults", e);
         }
+        
+        const initSDK = async (width: number, height: number, retryCount = 0) => {
+          try {
+            console.log(`Initializing AR SDK with: ${width}x${height} (Attempt ${retryCount + 1})`);
+            
+            const ar = new ArSdk({
+              auth: {
+                authFunc: () => getSignature(APPID, TOKEN),
+                appId: APPID,
+                licenseKey: LICENSE_KEY,
+              },
+              camera: {
+                width: width,
+                height: height,
+                mirror: true,
+              },
+              loading: {
+                enable: true,
+                lineWidth: 4,
+              },
+              beautify: {
+                whiten: beautySettings.whiten / 100,
+                dermabrasion: beautySettings.dermabrasion / 100,
+                lift: beautySettings.lift / 100,
+                shave: beautySettings.shave / 100,
+                eye: beautySettings.eye / 100,
+                chin: beautySettings.chin / 100,
+                darkCircle: beautySettings.darkCircle / 100,
+                nasolabialFolds: beautySettings.nasolabialFolds / 100,
+                cheekbone: beautySettings.cheekbone / 100,
+                head: beautySettings.head / 100,
+                eyeBrightness: beautySettings.eyeBrightness / 100,
+                lip: beautySettings.lip / 100,
+                forehead: beautySettings.forehead / 100,
+                nose: beautySettings.nose / 100,
+                usm: beautySettings.usm / 100,
+              },
+            });
 
-        const ar = new ArSdk({
-          auth: {
-            authFunc: () => getSignature(APPID, TOKEN),
-            appId: APPID,
-            licenseKey: LICENSE_KEY,
-          },
-          camera: {
-            width: cameraWidth,
-            height: cameraHeight,
-            mirror: true,
-          },
-          loading: {
-            enable: true,
-            lineWidth: 4,
-          },
-          beautify: {
-            whiten: beautySettings.whiten / 100,
-            dermabrasion: beautySettings.dermabrasion / 100,
-            lift: beautySettings.lift / 100,
-            shave: beautySettings.shave / 100,
-            eye: beautySettings.eye / 100,
-            chin: beautySettings.chin / 100,
-            darkCircle: beautySettings.darkCircle / 100,
-            nasolabialFolds: beautySettings.nasolabialFolds / 100,
-            cheekbone: beautySettings.cheekbone / 100,
-            head: beautySettings.head / 100,
-            eyeBrightness: beautySettings.eyeBrightness / 100,
-            lip: beautySettings.lip / 100,
-            forehead: beautySettings.forehead / 100,
-            nose: beautySettings.nose / 100,
-            usm: beautySettings.usm / 100,
-          },
-        });
+            arRef.current = ar;
 
-        arRef.current = ar;
+            ar.on("created", () => {
+              console.log("AR SDK created");
+            });
 
-        ar.on("created", () => {
-          console.log("AR SDK created");
-        });
+            ar.on("ready", async () => {
+              console.log("AR SDK ready");
+              setIsLoading(false);
 
-        ar.on("ready", async () => {
-          console.log("AR SDK ready");
-          setIsLoading(false);
+              try {
+                const mediaStream = await ar.getOutput();
+                if (videoRef.current) {
+                  videoRef.current.srcObject = mediaStream;
+                  await videoRef.current.play().catch(e => console.log("Play interrupted", e));
+                }
+              } catch (e) {
+                console.error("Error playing video stream", e);
+              }
+            });
 
-          const mediaStream = await ar.getOutput();
-          if (videoRef.current) {
-            videoRef.current.srcObject = mediaStream;
-            videoRef.current.play();
+            ar.on("error", (e: any) => {
+              console.error("AR SDK error:", e);
+              
+              // Check for resolution mismatch error code 10001206
+              if (e.code === 10001206 && retryCount < 2) {
+                // Extract resolution from error message if possible
+                // Message format: "The width 1920 or height 1080 of the obtained video stream is different from user config."
+                const match = e.message && e.message.match(/width (\d+) or height (\d+)/);
+                if (match) {
+                  const newWidth = parseInt(match[1]);
+                  const newHeight = parseInt(match[2]);
+                  console.log(`Retrying with detected resolution from error: ${newWidth}x${newHeight}`);
+                  if ((ar as any).destroy) {
+                    (ar as any).destroy();
+                  }
+                  setTimeout(() => initSDK(newWidth, newHeight, retryCount + 1), 500);
+                  return;
+                }
+              }
+
+              setError(
+                `AR SDK Error: ${e.message || "Unknown error"}`
+              );
+              setIsLoading(false);
+            });
+          } catch (err) {
+            console.error("Failed to initialize AR SDK:", err);
+            setIsLoading(false);
           }
-        });
+        };
 
-        ar.on("error", (e: any) => {
-          console.error("AR SDK error:", e);
-          console.error("Error details:", {
-            message: e.message,
-            code: e.code,
-            name: e.name,
-            stack: e.stack,
-          });
-          setError(
-            `AR SDK Error: ${e.message || "Unknown error"}. Browser: ${
-              navigator.userAgent
-            }`
-          );
-          setIsLoading(false);
-        });
+        // Start initialization
+        initSDK(cameraWidth, cameraHeight);
       } catch (err) {
         console.error("Failed to initialize AR SDK:", err);
         console.error("Browser info:", {
