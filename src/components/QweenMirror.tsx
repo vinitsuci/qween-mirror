@@ -127,16 +127,41 @@ const QweenMirror = () => {
 
         ar.on("error", (e: any) => {
           console.error("AR SDK error:", e);
-          setError(`AR SDK Error: ${e.message || "Unknown error"}`);
+          console.error("Error details:", {
+            message: e.message,
+            code: e.code,
+            name: e.name,
+            stack: e.stack,
+          });
+          setError(
+            `AR SDK Error: ${e.message || "Unknown error"}. Browser: ${
+              navigator.userAgent
+            }`
+          );
           setIsLoading(false);
         });
       } catch (err) {
         console.error("Failed to initialize AR SDK:", err);
-        setError(
-          `Initialization failed: ${
-            err instanceof Error ? err.message : "Unknown error"
-          }`
-        );
+        console.error("Browser info:", {
+          userAgent: navigator.userAgent,
+          platform: navigator.platform,
+          vendor: navigator.vendor,
+        });
+        
+        // Check if it's a permissions issue
+        if (err instanceof Error && err.name === "NotAllowedError") {
+          setError("Camera access denied. Please allow camera permissions.");
+        } else if (err instanceof Error && err.name === "NotFoundError") {
+          setError("No camera found on this device.");
+        } else if (err instanceof Error && err.name === "NotReadableError") {
+          setError("Camera is already in use by another application.");
+        } else {
+          setError(
+            `Initialization failed: ${
+              err instanceof Error ? err.message : "Unknown error"
+            }`
+          );
+        }
         setIsLoading(false);
       }
     };
