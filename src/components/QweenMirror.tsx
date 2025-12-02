@@ -67,6 +67,41 @@ const QweenMirror = () => {
       initRef.current = true;
 
       try {
+        // Detect the best supported camera resolution
+        let cameraWidth = 640;
+        let cameraHeight = 480;
+
+        try {
+          // Try to get camera capabilities to determine best resolution
+          // Request 1080p as ideal - camera will provide its best supported resolution
+          const stream = await navigator.mediaDevices.getUserMedia({
+            video: { width: { ideal: 1920 }, height: { ideal: 1080 } },
+          });
+
+          const videoTrack = stream.getVideoTracks()[0];
+          const settings = videoTrack.getSettings();
+
+          // Use the actual resolution the camera provides
+          if (settings.width && settings.height) {
+            cameraWidth = settings.width;
+            cameraHeight = settings.height;
+            console.log(
+              `Camera supports: ${cameraWidth}x${cameraHeight}`
+            );
+          }
+
+          // Stop the test stream
+          stream.getTracks().forEach((track) => track.stop());
+        } catch (testError) {
+          console.warn(
+            "Could not detect camera capabilities, using VGA (640x480)",
+            testError
+          );
+          // Fallback to VGA if detection fails
+          cameraWidth = 640;
+          cameraHeight = 480;
+        }
+
         const ar = new ArSdk({
           auth: {
             authFunc: () => getSignature(APPID, TOKEN),
@@ -74,10 +109,8 @@ const QweenMirror = () => {
             licenseKey: LICENSE_KEY,
           },
           camera: {
-            // Use 720p HD resolution (1280x720) for better quality
-            // This is widely supported on modern cameras
-            width: 1280,
-            height: 720,
+            width: cameraWidth,
+            height: cameraHeight,
             mirror: true,
           },
           loading: {
