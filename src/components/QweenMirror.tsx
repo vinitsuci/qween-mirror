@@ -70,41 +70,10 @@ const QweenMirror = () => {
         // Detect device type
         const isMobile = /iPhone|iPad|iPod|Android/i.test(navigator.userAgent);
         
-        let cameraWidth = isMobile ? 480 : 1280;
-        let cameraHeight = isMobile ? 640 : 720;
-
-        try {
-          // Check actual camera capabilities
-          const constraints = {
-            video: {
-              width: { ideal: isMobile ? 1080 : 1920 },
-              height: { ideal: isMobile ? 1920 : 1080 },
-              facingMode: isMobile ? "user" : undefined,
-            },
-            audio: false,
-          };
-          
-          console.log("Detecting camera capabilities...");
-          const stream = await navigator.mediaDevices.getUserMedia(constraints);
-          const track = stream.getVideoTracks()[0];
-          const settings = track.getSettings();
-          
-          if (settings.width && settings.height) {
-            cameraWidth = settings.width;
-            cameraHeight = settings.height;
-            console.log(`Detected camera resolution: ${cameraWidth}x${cameraHeight}`);
-          }
-          
-          // CRITICAL: Stop the track to release camera before SDK uses it
-          track.stop();
-          stream.getTracks().forEach(t => t.stop());
-          
-          // Small delay to ensure camera is released
-          await new Promise(resolve => setTimeout(resolve, 100));
-          
-        } catch (e) {
-          console.warn("Failed to detect camera resolution, using defaults", e);
-        }
+        // Default resolutions - we'll let the retry logic handle mismatches
+        // Use higher resolution for mobile to avoid "zoomed in" low-res look
+        let cameraWidth = isMobile ? 720 : 1280;
+        let cameraHeight = isMobile ? 1280 : 720;
         
         const initSDK = async (width: number, height: number, retryCount = 0) => {
           try {
