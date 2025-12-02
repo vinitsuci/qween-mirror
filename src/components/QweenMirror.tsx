@@ -81,12 +81,14 @@ const QweenMirror = () => {
           const videoTrack = stream.getVideoTracks()[0];
           const settings = videoTrack.getSettings();
 
-          // Use the actual resolution the camera provides
+          // Use the EXACT resolution the camera provides (including orientation)
+          // Mobile/tablet cameras often provide portrait (e.g., 1080x1920)
+          // Desktop cameras provide landscape (e.g., 1920x1080)
           if (settings.width && settings.height) {
             cameraWidth = settings.width;
             cameraHeight = settings.height;
             console.log(
-              `Camera supports: ${cameraWidth}x${cameraHeight}`
+              `Using camera resolution: ${cameraWidth}x${cameraHeight}`
             );
           }
 
