@@ -67,13 +67,6 @@ const QweenMirror = () => {
       initRef.current = true;
 
       try {
-        // Detect device type for appropriate camera resolution
-        const isMobile = /iPhone|iPad|iPod|Android/i.test(navigator.userAgent);
-
-        // Use standard resolutions that work well
-        const cameraWidth = isMobile ? 720 : 1280;
-        const cameraHeight = isMobile ? 1280 : 720;
-
         const ar = new ArSdk({
           auth: {
             authFunc: () => getSignature(APPID, TOKEN),
@@ -81,8 +74,10 @@ const QweenMirror = () => {
             licenseKey: LICENSE_KEY,
           },
           camera: {
-            width: cameraWidth,
-            height: cameraHeight,
+            // Use 720p HD resolution (1280x720) for better quality
+            // This is widely supported on modern cameras
+            width: 1280,
+            height: 720,
             mirror: true,
           },
           loading: {
