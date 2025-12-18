@@ -1,4 +1,4 @@
-declare module 'tencentcloud-webar' {
+declare module "tencentcloud-webar" {
   export interface AuthConfig {
     authFunc: () => { signature: string; timestamp: number };
     appId: string;
@@ -40,16 +40,28 @@ declare module 'tencentcloud-webar' {
     camera: CameraConfig;
     loading: LoadingConfig;
     beautify: BeautifyConfig;
+    language?: "en" | "zh"; // Language for effect/filter names
+  }
+
+  export interface EffectConfig {
+    id: string;
+    intensity?: number;
+    filterIntensity?: number;
   }
 
   export class ArSdk {
     constructor(config: ArSdkConfig);
-    on(event: 'created' | 'ready' | 'error', callback: (data?: any) => void): void;
+    on(
+      event: "created" | "ready" | "error",
+      callback: (data?: any) => void
+    ): void;
     getOutput(): Promise<MediaStream>;
     getEffectList(params: { Type: string }): Promise<any[]>;
     getCommonFilter(): Promise<any[]>;
     setBeautify(config: BeautifyConfig): void;
-    setEffect(effects: any[]): void;
-    setFilter(filterId: string): void;
+    // Official API: setEffect(effects: EffectConfig[] | null)
+    setEffect(effects: EffectConfig[] | null): void;
+    // Official API: setFilter(filterId: string | null, intensity?: number)
+    setFilter(filterId: string | null, intensity?: number): void;
   }
 }

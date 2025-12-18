@@ -3,24 +3,35 @@ import { ArSdk } from "tencentcloud-webar";
 import { getSignature } from "../utils/auth";
 import "./QweenMirror.css";
 
-interface BeautySettings {
-  // Basic (always available)
-  whiten: number; // brightening
-  dermabrasion: number; // smooth skin
-  lift: number; // slim face
-  shave: number; // face width (V shape)
-  eye: number; // big eyes
-  chin: number; // chin
-  // Advanced (v1.0.11+)
-  darkCircle: number; // dark circle removal
-  nasolabialFolds: number; // nasolabial folds
-  cheekbone: number; // cheek bone
-  head: number; // head size (small head)
-  eyeBrightness: number; // eye brightness
-  lip: number; // lip enhancement
-  forehead: number; // forehead
-  nose: number; // nose
-  usm: number; // distinct/sharpness
+// Hardcoded beauty settings - optimized for jewelry retail
+const BEAUTY_SETTINGS = {
+  whiten: 0.18, // Neutral tone correction without fairness bias
+  dermabrasion: 0.35, // Texture preserved; 50 is too plasticky in-store
+  nasolabialFolds: 0.05, // Softens harsh lighting lines, not age erasure
+  usm: 0.06, // Camera clarity only (sharpness)
+  cheekbone: 0.03, // Subtle lift, no sculpting
+  lift: 0.02, // Slim face - almost imperceptible
+  shave: 0, // V Shape - avoid jaw distortion
+  forehead: 0, // Avoid proportion changes
+  head: 0, // Small head - never in jewellery retail
+  lip: 0, // No lip reshaping
+  nose: 0, // Critical for trust
+  eye: 0, // Big eyes - avoid anime effect
+  eyeBrightness: 0.06, // Reduces dullness from store lights
+  darkCircle: 0.1, // Most universally appreciated correction
+  chin: 0.02, // Micro balance only
+};
+
+interface Effect {
+  id: string;
+  name: string;
+  coverUrl?: string;
+}
+
+interface Filter {
+  id: string;
+  name: string;
+  previewImage?: string;
 }
 
 const QweenMirror = () => {
@@ -31,24 +42,15 @@ const QweenMirror = () => {
   const [error, setError] = useState<string>("");
   const [isEnabled, setIsEnabled] = useState(true);
   const [isPanelVisible, setIsPanelVisible] = useState(true);
+  const [activeTab, setActiveTab] = useState<"makeup" | "filters">("makeup");
 
-  const [beautySettings, setBeautySettings] = useState<BeautySettings>({
-    whiten: 30,
-    dermabrasion: 50,
-    lift: 0,
-    shave: 0,
-    eye: 0,
-    chin: 0,
-    darkCircle: 0,
-    nasolabialFolds: 0,
-    cheekbone: 0,
-    head: 0,
-    eyeBrightness: 0,
-    lip: 0,
-    forehead: 0,
-    nose: 0,
-    usm: 0,
-  });
+  // Makeup effects
+  const [makeupEffects, setMakeupEffects] = useState<Effect[]>([]);
+  const [selectedMakeup, setSelectedMakeup] = useState<string | null>(null);
+
+  // Filters
+  const [filters, setFilters] = useState<Filter[]>([]);
+  const [selectedFilter, setSelectedFilter] = useState<string | null>(null);
 
   useEffect(() => {
     const APPID = import.meta.env.VITE_TENCENT_APP_ID;
@@ -69,16 +71,17 @@ const QweenMirror = () => {
       try {
         // Detect device type
         const isMobile = /iPhone|iPad|iPod|Android/i.test(navigator.userAgent);
-        
-        // Default resolutions - we'll let the retry logic handle mismatches
-        // Use higher resolution for mobile to avoid "zoomed in" low-res look
-        let cameraWidth = isMobile ? 720 : 1280;
-        let cameraHeight = isMobile ? 1280 : 720;
-        
-        const initSDK = async (width: number, height: number, retryCount = 0) => {
+
+        // Default resolutions
+        const cameraWidth = isMobile ? 720 : 1280;
+        const cameraHeight = isMobile ? 1280 : 720;
+
+        const initSDK = async (
+          width: number,
+          height: number,
+          retryCount = 0
+        ) => {
           try {
-            console.log(`Initializing AR SDK with: ${width}x${height} (Attempt ${retryCount + 1})`);
-            
             const ar = new ArSdk({
               auth: {
                 authFunc: () => getSignature(APPID, TOKEN),
@@ -94,88 +97,91 @@ const QweenMirror = () => {
                 enable: true,
                 lineWidth: 4,
               },
-              beautify: {
-                whiten: beautySettings.whiten / 100,
-                dermabrasion: beautySettings.dermabrasion / 100,
-                lift: beautySettings.lift / 100,
-                shave: beautySettings.shave / 100,
-                eye: beautySettings.eye / 100,
-                chin: beautySettings.chin / 100,
-                darkCircle: beautySettings.darkCircle / 100,
-                nasolabialFolds: beautySettings.nasolabialFolds / 100,
-                cheekbone: beautySettings.cheekbone / 100,
-                head: beautySettings.head / 100,
-                eyeBrightness: beautySettings.eyeBrightness / 100,
-                lip: beautySettings.lip / 100,
-                forehead: beautySettings.forehead / 100,
-                nose: beautySettings.nose / 100,
-                usm: beautySettings.usm / 100,
-              },
+              beautify: BEAUTY_SETTINGS,
+              language: "en", // Set language to English for effect/filter names
             });
 
             arRef.current = ar;
 
-            ar.on("created", () => {
-              console.log("AR SDK created");
+            ar.on("created", async () => {
+              // Load preset effects (makeup)
+              try {
+                const presetEffects = await ar.getEffectList({
+                  Type: "Preset",
+                });
+                const makeupList = (presetEffects || []).filter(
+                  (item: any) => item.Label && item.Label.indexOf("Makeup") >= 0
+                );
+                const normalizedEffects: Effect[] = makeupList.map(
+                  (e: any) => ({
+                    id: e.EffectId,
+                    name: e.Name,
+                    coverUrl: e.CoverUrl,
+                  })
+                );
+                setMakeupEffects(normalizedEffects);
+              } catch (err) {
+                console.error("Failed to load effects:", err);
+              }
+
+              // Load filters
+              try {
+                const filterList = await ar.getCommonFilter();
+                const normalizedFilters: Filter[] = (filterList || []).map(
+                  (f: any) => ({
+                    id: f.EffectId,
+                    name: f.Name,
+                    previewImage: f.CoverUrl,
+                  })
+                );
+                setFilters(normalizedFilters);
+              } catch (err) {
+                console.error("Failed to load filters:", err);
+              }
             });
 
             ar.on("ready", async () => {
-              console.log("AR SDK ready");
               setIsLoading(false);
-
               try {
                 const mediaStream = await ar.getOutput();
                 if (videoRef.current) {
                   videoRef.current.srcObject = mediaStream;
-                  await videoRef.current.play().catch(e => console.log("Play interrupted", e));
+                  await videoRef.current.play().catch(() => {});
                 }
               } catch (e) {
-                console.error("Error playing video stream", e);
+                console.error("Error playing video stream:", e);
               }
             });
 
             ar.on("error", (e: any) => {
-              console.error("AR SDK error:", e);
-              
-              // Check for resolution mismatch error code 10001206
+              // Handle resolution mismatch with retry
               if (e.code === 10001206 && retryCount < 2) {
-                // Extract resolution from error message if possible
-                // Message format: "The width 1920 or height 1080 of the obtained video stream is different from user config."
-                const match = e.message && e.message.match(/width (\d+) or height (\d+)/);
+                const match = e.message?.match(/width (\d+) or height (\d+)/);
                 if (match) {
                   const newWidth = parseInt(match[1]);
                   const newHeight = parseInt(match[2]);
-                  console.log(`Retrying with detected resolution from error: ${newWidth}x${newHeight}`);
                   if ((ar as any).destroy) {
                     (ar as any).destroy();
                   }
-                  setTimeout(() => initSDK(newWidth, newHeight, retryCount + 1), 500);
+                  setTimeout(
+                    () => initSDK(newWidth, newHeight, retryCount + 1),
+                    500
+                  );
                   return;
                 }
               }
 
-              setError(
-                `AR SDK Error: ${e.message || "Unknown error"}`
-              );
+              // Show error to user for critical issues only
+              setError(`AR SDK Error: ${e.message || "Unknown error"}`);
               setIsLoading(false);
             });
           } catch (err) {
-            console.error("Failed to initialize AR SDK:", err);
             setIsLoading(false);
           }
         };
 
-        // Start initialization
         initSDK(cameraWidth, cameraHeight);
       } catch (err) {
-        console.error("Failed to initialize AR SDK:", err);
-        console.error("Browser info:", {
-          userAgent: navigator.userAgent,
-          platform: navigator.platform,
-          vendor: navigator.vendor,
-        });
-        
-        // Check if it's a permissions issue
         if (err instanceof Error && err.name === "NotAllowedError") {
           setError("Camera access denied. Please allow camera permissions.");
         } else if (err instanceof Error && err.name === "NotFoundError") {
@@ -203,58 +209,13 @@ const QweenMirror = () => {
     };
   }, []);
 
-  const updateBeauty = (key: keyof BeautySettings, value: number) => {
-    setBeautySettings((prev) => {
-      const newSettings = { ...prev, [key]: value };
-
-      // Update AR SDK with new settings immediately
-      if (arRef.current && isEnabled) {
-        arRef.current.setBeautify({
-          whiten: newSettings.whiten / 100,
-          dermabrasion: newSettings.dermabrasion / 100,
-          lift: newSettings.lift / 100,
-          shave: newSettings.shave / 100,
-          eye: newSettings.eye / 100,
-          chin: newSettings.chin / 100,
-          darkCircle: newSettings.darkCircle / 100,
-          nasolabialFolds: newSettings.nasolabialFolds / 100,
-          cheekbone: newSettings.cheekbone / 100,
-          head: newSettings.head / 100,
-          eyeBrightness: newSettings.eyeBrightness / 100,
-          lip: newSettings.lip / 100,
-          forehead: newSettings.forehead / 100,
-          nose: newSettings.nose / 100,
-          usm: newSettings.usm / 100,
-        });
-      }
-
-      return newSettings;
-    });
-  };
-
   const handleToggle = () => {
     const newState = !isEnabled;
     setIsEnabled(newState);
 
     if (arRef.current) {
       if (newState) {
-        arRef.current.setBeautify({
-          whiten: beautySettings.whiten / 100,
-          dermabrasion: beautySettings.dermabrasion / 100,
-          lift: beautySettings.lift / 100,
-          shave: beautySettings.shave / 100,
-          eye: beautySettings.eye / 100,
-          chin: beautySettings.chin / 100,
-          darkCircle: beautySettings.darkCircle / 100,
-          nasolabialFolds: beautySettings.nasolabialFolds / 100,
-          cheekbone: beautySettings.cheekbone / 100,
-          head: beautySettings.head / 100,
-          eyeBrightness: beautySettings.eyeBrightness / 100,
-          lip: beautySettings.lip / 100,
-          forehead: beautySettings.forehead / 100,
-          nose: beautySettings.nose / 100,
-          usm: beautySettings.usm / 100,
-        });
+        arRef.current.setBeautify(BEAUTY_SETTINGS);
       } else {
         arRef.current.setBeautify({
           whiten: 0,
@@ -277,45 +238,39 @@ const QweenMirror = () => {
     }
   };
 
-  const handleReset = () => {
-    const resetSettings: BeautySettings = {
-      whiten: 30,
-      dermabrasion: 50,
-      lift: 0,
-      shave: 0,
-      eye: 0,
-      chin: 0,
-      darkCircle: 0,
-      nasolabialFolds: 0,
-      cheekbone: 0,
-      head: 0,
-      eyeBrightness: 0,
-      lip: 0,
-      forehead: 0,
-      nose: 0,
-      usm: 0,
-    };
-    setBeautySettings(resetSettings);
-
-    if (arRef.current && isEnabled) {
-      arRef.current.setBeautify({
-        whiten: 0.3,
-        dermabrasion: 0.5,
-        lift: 0,
-        shave: 0,
-        eye: 0,
-        chin: 0,
-        darkCircle: 0,
-        nasolabialFolds: 0,
-        cheekbone: 0,
-        head: 0,
-        eyeBrightness: 0,
-        lip: 0,
-        forehead: 0,
-        nose: 0,
-        usm: 0,
-      });
+  const handleMakeupSelect = (effectId: string | null) => {
+    setSelectedMakeup(effectId);
+    if (arRef.current) {
+      if (effectId) {
+        arRef.current.setEffect([
+          { id: effectId, intensity: 0.9, filterIntensity: 0 },
+        ]);
+      } else {
+        arRef.current.setEffect(null);
+      }
     }
+  };
+
+  const handleFilterSelect = (filterId: string | null) => {
+    setSelectedFilter(filterId);
+    if (arRef.current) {
+      if (filterId) {
+        arRef.current.setFilter(filterId, 0.9);
+      } else {
+        arRef.current.setFilter(null);
+      }
+    }
+  };
+
+  const handleReset = () => {
+    setSelectedMakeup(null);
+    setSelectedFilter(null);
+    if (arRef.current) {
+      arRef.current.setEffect(null);
+      arRef.current.setFilter(null);
+      arRef.current.setBeautify(BEAUTY_SETTINGS);
+    }
+    setIsEnabled(true);
   };
 
   return (
@@ -349,7 +304,7 @@ const QweenMirror = () => {
               <div className="panel-header">
                 <div className="header-controls">
                   <div className="toggle-group">
-                    <span className="toggle-label">On-Off</span>
+                    <span className="toggle-label">Beauty</span>
                     <label className="toggle-switch">
                       <input
                         type="checkbox"
@@ -366,217 +321,98 @@ const QweenMirror = () => {
               </div>
 
               <div className="tabs">
-                <div className="section-title">Skin</div>
-                <div className="section-title">Shape</div>
-                <div className="section-title">Features</div>
+                <button
+                  className={`tab-btn ${
+                    activeTab === "makeup" ? "active" : ""
+                  }`}
+                  onClick={() => setActiveTab("makeup")}
+                >
+                  Makeup
+                </button>
+                <button
+                  className={`tab-btn ${
+                    activeTab === "filters" ? "active" : ""
+                  }`}
+                  onClick={() => setActiveTab("filters")}
+                >
+                  Filters
+                </button>
               </div>
 
-              <div className="sliders-container">
-                {/* Skin Section */}
-                <div className="section-header">Skin</div>
-                <div className="slider-group">
-                  <label>Whiten</label>
-                  <input
-                    type="range"
-                    min="0"
-                    max="100"
-                    value={beautySettings.whiten}
-                    onChange={(e) =>
-                      updateBeauty("whiten", Number(e.target.value))
-                    }
-                  />
-                  <span className="value">{beautySettings.whiten}</span>
-                </div>
-                <div className="slider-group">
-                  <label>Smooth</label>
-                  <input
-                    type="range"
-                    min="0"
-                    max="100"
-                    value={beautySettings.dermabrasion}
-                    onChange={(e) =>
-                      updateBeauty("dermabrasion", Number(e.target.value))
-                    }
-                  />
-                  <span className="value">{beautySettings.dermabrasion}</span>
-                </div>
-                <div className="slider-group">
-                  <label>Nasolabial Folds</label>
-                  <input
-                    type="range"
-                    min="0"
-                    max="100"
-                    value={beautySettings.nasolabialFolds}
-                    onChange={(e) =>
-                      updateBeauty("nasolabialFolds", Number(e.target.value))
-                    }
-                  />
-                  <span className="value">
-                    {beautySettings.nasolabialFolds}
-                  </span>
-                </div>
-                <div className="slider-group">
-                  <label>Sharpness</label>
-                  <input
-                    type="range"
-                    min="0"
-                    max="100"
-                    value={beautySettings.usm}
-                    onChange={(e) =>
-                      updateBeauty("usm", Number(e.target.value))
-                    }
-                  />
-                  <span className="value">{beautySettings.usm}</span>
-                </div>
+              <div className="effects-container">
+                {activeTab === "makeup" && (
+                  <div className="effects-grid">
+                    <button
+                      className={`effect-item ${
+                        selectedMakeup === null ? "selected" : ""
+                      }`}
+                      onClick={() => handleMakeupSelect(null)}
+                    >
+                      <div className="effect-icon none">✕</div>
+                      <span className="effect-name">None</span>
+                    </button>
+                    {makeupEffects.map((effect) => (
+                      <button
+                        key={effect.id}
+                        className={`effect-item ${
+                          selectedMakeup === effect.id ? "selected" : ""
+                        }`}
+                        onClick={() => handleMakeupSelect(effect.id)}
+                      >
+                        {effect.coverUrl ? (
+                          <img
+                            src={effect.coverUrl}
+                            alt={effect.name}
+                            className="effect-icon"
+                          />
+                        ) : (
+                          <div className="effect-icon placeholder">💄</div>
+                        )}
+                        <span className="effect-name">{effect.name}</span>
+                      </button>
+                    ))}
+                    {makeupEffects.length === 0 && (
+                      <p className="no-effects">No makeup effects available</p>
+                    )}
+                  </div>
+                )}
 
-                {/* Shape Section */}
-                <div className="section-header">Shape</div>
-                <div className="slider-group">
-                  <label>Cheekbone</label>
-                  <input
-                    type="range"
-                    min="0"
-                    max="100"
-                    value={beautySettings.cheekbone}
-                    onChange={(e) =>
-                      updateBeauty("cheekbone", Number(e.target.value))
-                    }
-                  />
-                  <span className="value">{beautySettings.cheekbone}</span>
-                </div>
-                <div className="slider-group">
-                  <label>Slim face</label>
-                  <input
-                    type="range"
-                    min="0"
-                    max="100"
-                    value={beautySettings.lift}
-                    onChange={(e) =>
-                      updateBeauty("lift", Number(e.target.value))
-                    }
-                  />
-                  <span className="value">{beautySettings.lift}</span>
-                </div>
-                <div className="slider-group">
-                  <label>V shape</label>
-                  <input
-                    type="range"
-                    min="0"
-                    max="100"
-                    value={beautySettings.shave}
-                    onChange={(e) =>
-                      updateBeauty("shave", Number(e.target.value))
-                    }
-                  />
-                  <span className="value">{beautySettings.shave}</span>
-                </div>
-                <div className="slider-group">
-                  <label>Forehead</label>
-                  <input
-                    type="range"
-                    min="0"
-                    max="100"
-                    value={beautySettings.forehead}
-                    onChange={(e) =>
-                      updateBeauty("forehead", Number(e.target.value))
-                    }
-                  />
-                  <span className="value">{beautySettings.forehead}</span>
-                </div>
-                <div className="slider-group">
-                  <label>Small Head</label>
-                  <input
-                    type="range"
-                    min="0"
-                    max="100"
-                    value={beautySettings.head}
-                    onChange={(e) =>
-                      updateBeauty("head", Number(e.target.value))
-                    }
-                  />
-                  <span className="value">{beautySettings.head}</span>
-                </div>
-
-                {/* Features Section */}
-                <div className="section-header">Features</div>
-                <div className="slider-group">
-                  <label>Lip</label>
-                  <input
-                    type="range"
-                    min="0"
-                    max="100"
-                    value={beautySettings.lip}
-                    onChange={(e) =>
-                      updateBeauty("lip", Number(e.target.value))
-                    }
-                  />
-                  <span className="value">{beautySettings.lip}</span>
-                </div>
-                <div className="slider-group">
-                  <label>Nose</label>
-                  <input
-                    type="range"
-                    min="0"
-                    max="100"
-                    value={beautySettings.nose}
-                    onChange={(e) =>
-                      updateBeauty("nose", Number(e.target.value))
-                    }
-                  />
-                  <span className="value">{beautySettings.nose}</span>
-                </div>
-                <div className="slider-group">
-                  <label>Big eyes</label>
-                  <input
-                    type="range"
-                    min="0"
-                    max="100"
-                    value={beautySettings.eye}
-                    onChange={(e) =>
-                      updateBeauty("eye", Number(e.target.value))
-                    }
-                  />
-                  <span className="value">{beautySettings.eye}</span>
-                </div>
-                <div className="slider-group">
-                  <label>Eye Brightness</label>
-                  <input
-                    type="range"
-                    min="0"
-                    max="100"
-                    value={beautySettings.eyeBrightness}
-                    onChange={(e) =>
-                      updateBeauty("eyeBrightness", Number(e.target.value))
-                    }
-                  />
-                  <span className="value">{beautySettings.eyeBrightness}</span>
-                </div>
-                <div className="slider-group">
-                  <label>Dark Circle</label>
-                  <input
-                    type="range"
-                    min="0"
-                    max="100"
-                    value={beautySettings.darkCircle}
-                    onChange={(e) =>
-                      updateBeauty("darkCircle", Number(e.target.value))
-                    }
-                  />
-                  <span className="value">{beautySettings.darkCircle}</span>
-                </div>
-                <div className="slider-group">
-                  <label>Chin</label>
-                  <input
-                    type="range"
-                    min="0"
-                    max="100"
-                    value={beautySettings.chin}
-                    onChange={(e) =>
-                      updateBeauty("chin", Number(e.target.value))
-                    }
-                  />
-                  <span className="value">{beautySettings.chin}</span>
-                </div>
+                {activeTab === "filters" && (
+                  <div className="effects-grid">
+                    <button
+                      className={`effect-item ${
+                        selectedFilter === null ? "selected" : ""
+                      }`}
+                      onClick={() => handleFilterSelect(null)}
+                    >
+                      <div className="effect-icon none">✕</div>
+                      <span className="effect-name">None</span>
+                    </button>
+                    {filters.map((filter) => (
+                      <button
+                        key={filter.id}
+                        className={`effect-item ${
+                          selectedFilter === filter.id ? "selected" : ""
+                        }`}
+                        onClick={() => handleFilterSelect(filter.id)}
+                      >
+                        {filter.previewImage ? (
+                          <img
+                            src={filter.previewImage}
+                            alt={filter.name}
+                            className="effect-icon"
+                          />
+                        ) : (
+                          <div className="effect-icon placeholder">🎨</div>
+                        )}
+                        <span className="effect-name">{filter.name}</span>
+                      </button>
+                    ))}
+                    {filters.length === 0 && (
+                      <p className="no-effects">No filters available</p>
+                    )}
+                  </div>
+                )}
               </div>
             </div>
           )}
