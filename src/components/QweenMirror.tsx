@@ -1,25 +1,92 @@
-import { useEffect, useRef, useState } from "react";
+import { Fragment, useEffect, useRef, useState } from "react";
 import { ArSdk } from "tencentcloud-webar";
 import { getSignature } from "../utils/auth";
 import "./QweenMirror.css";
 
-// Hardcoded beauty settings - optimized for jewelry retail
-const BEAUTY_SETTINGS = {
-  whiten: 0.18, // Neutral tone correction without fairness bias
-  dermabrasion: 0.35, // Texture preserved; 50 is too plasticky in-store
-  nasolabialFolds: 0.05, // Softens harsh lighting lines, not age erasure
-  usm: 0.06, // Camera clarity only (sharpness)
-  cheekbone: 0.03, // Subtle lift, no sculpting
-  lift: 0.02, // Slim face - almost imperceptible
-  shave: 0, // V Shape - avoid jaw distortion
-  forehead: 0, // Avoid proportion changes
-  head: 0, // Small head - never in jewellery retail
-  lip: 0, // No lip reshaping
-  nose: 0, // Critical for trust
-  eye: 0, // Big eyes - avoid anime effect
-  eyeBrightness: 0.06, // Reduces dullness from store lights
-  darkCircle: 0.1, // Most universally appreciated correction
-  chin: 0.02, // Micro balance only
+interface BeautySettings {
+  whiten: number;
+  dermabrasion: number;
+  lift: number;
+  shave: number;
+  eye: number;
+  chin: number;
+  darkCircle: number;
+  nasolabialFolds: number;
+  cheekbone: number;
+  head: number;
+  eyeBrightness: number;
+  lip: number;
+  forehead: number;
+  nose: number;
+  usm: number;
+}
+
+const DEFAULT_BEAUTY: BeautySettings = {
+  whiten: 30,
+  dermabrasion: 50,
+  lift: 0,
+  shave: 0,
+  eye: 0,
+  chin: 0,
+  darkCircle: 0,
+  nasolabialFolds: 0,
+  cheekbone: 0,
+  head: 0,
+  eyeBrightness: 0,
+  lip: 0,
+  forehead: 0,
+  nose: 0,
+  usm: 0,
+};
+
+const ZERO_BEAUTY: BeautySettings = {
+  whiten: 0,
+  dermabrasion: 0,
+  lift: 0,
+  shave: 0,
+  eye: 0,
+  chin: 0,
+  darkCircle: 0,
+  nasolabialFolds: 0,
+  cheekbone: 0,
+  head: 0,
+  eyeBrightness: 0,
+  lip: 0,
+  forehead: 0,
+  nose: 0,
+  usm: 0,
+};
+
+const toSdkBeauty = (s: BeautySettings) =>
+  Object.fromEntries(Object.entries(s).map(([k, v]) => [k, v / 100]));
+
+type BeautySubTab = "skin" | "shape" | "features";
+
+const BEAUTY_GROUPS: Record<
+  BeautySubTab,
+  { key: keyof BeautySettings; label: string }[]
+> = {
+  skin: [
+    { key: "whiten", label: "Whiten" },
+    { key: "dermabrasion", label: "Smooth" },
+    { key: "nasolabialFolds", label: "Nasolabial Folds" },
+    { key: "usm", label: "Sharpness" },
+  ],
+  shape: [
+    { key: "cheekbone", label: "Cheekbone" },
+    { key: "lift", label: "Slim face" },
+    { key: "shave", label: "V shape" },
+    { key: "forehead", label: "Forehead" },
+    { key: "head", label: "Small Head" },
+  ],
+  features: [
+    { key: "lip", label: "Lip" },
+    { key: "nose", label: "Nose" },
+    { key: "eye", label: "Big eyes" },
+    { key: "eyeBrightness", label: "Eye Brightness" },
+    { key: "darkCircle", label: "Dark Circle" },
+    { key: "chin", label: "Chin" },
+  ],
 };
 
 interface Effect {
@@ -42,7 +109,13 @@ const QweenMirror = () => {
   const [error, setError] = useState<string>("");
   const [isEnabled, setIsEnabled] = useState(true);
   const [isPanelVisible, setIsPanelVisible] = useState(true);
-  const [activeTab, setActiveTab] = useState<"makeup" | "filters">("makeup");
+  const [activeTab, setActiveTab] = useState<"beauty" | "makeup" | "filters">(
+    "beauty"
+  );
+
+  const [beautySettings, setBeautySettings] =
+    useState<BeautySettings>(DEFAULT_BEAUTY);
+  const beautyRef = useRef<BeautySettings>(DEFAULT_BEAUTY);
 
   // Makeup effects
   const [makeupEffects, setMakeupEffects] = useState<Effect[]>([]);
@@ -69,12 +142,29 @@ const QweenMirror = () => {
       initRef.current = true;
 
       try {
-        // Detect device type
-        const isMobile = /iPhone|iPad|iPod|Android/i.test(navigator.userAgent);
+        // Use the camera's own default resolution. Preflight getUserMedia
+        // with no size constraints, read whatever the camera returns, and
+        // pass that to ArSdk so it never trips OverconstrainedError.
+        let cameraWidth = 640;
+        let cameraHeight = 480;
 
-        // Default resolutions
-        const cameraWidth = isMobile ? 720 : 1280;
-        const cameraHeight = isMobile ? 1280 : 720;
+        try {
+          const stream = await navigator.mediaDevices.getUserMedia({
+            video: true,
+            audio: false,
+          });
+          const track = stream.getVideoTracks()[0];
+          const settings = track.getSettings();
+          if (settings.width && settings.height) {
+            cameraWidth = settings.width;
+            cameraHeight = settings.height;
+          }
+          stream.getTracks().forEach((t) => t.stop());
+          // Brief delay so the camera is fully released before the SDK opens it
+          await new Promise((resolve) => setTimeout(resolve, 150));
+        } catch (e) {
+          console.warn("Camera preflight failed, falling back to 640x480", e);
+        }
 
         const initSDK = async (
           width: number,
@@ -97,7 +187,7 @@ const QweenMirror = () => {
                 enable: true,
                 lineWidth: 4,
               },
-              beautify: BEAUTY_SETTINGS,
+              beautify: toSdkBeauty(beautyRef.current),
               language: "en", // Set language to English for effect/filter names
             });
 
@@ -214,28 +304,21 @@ const QweenMirror = () => {
     setIsEnabled(newState);
 
     if (arRef.current) {
-      if (newState) {
-        arRef.current.setBeautify(BEAUTY_SETTINGS);
-      } else {
-        arRef.current.setBeautify({
-          whiten: 0,
-          dermabrasion: 0,
-          lift: 0,
-          shave: 0,
-          eye: 0,
-          chin: 0,
-          darkCircle: 0,
-          nasolabialFolds: 0,
-          cheekbone: 0,
-          head: 0,
-          eyeBrightness: 0,
-          lip: 0,
-          forehead: 0,
-          nose: 0,
-          usm: 0,
-        });
-      }
+      arRef.current.setBeautify(
+        toSdkBeauty(newState ? beautySettings : ZERO_BEAUTY)
+      );
     }
+  };
+
+  const updateBeauty = (key: keyof BeautySettings, value: number) => {
+    setBeautySettings((prev) => {
+      const next = { ...prev, [key]: value };
+      beautyRef.current = next;
+      if (arRef.current && isEnabled) {
+        arRef.current.setBeautify(toSdkBeauty(next));
+      }
+      return next;
+    });
   };
 
   const handleMakeupSelect = (effectId: string | null) => {
@@ -265,10 +348,12 @@ const QweenMirror = () => {
   const handleReset = () => {
     setSelectedMakeup(null);
     setSelectedFilter(null);
+    setBeautySettings(DEFAULT_BEAUTY);
+    beautyRef.current = DEFAULT_BEAUTY;
     if (arRef.current) {
       arRef.current.setEffect(null);
       arRef.current.setFilter(null);
-      arRef.current.setBeautify(BEAUTY_SETTINGS);
+      arRef.current.setBeautify(toSdkBeauty(DEFAULT_BEAUTY));
     }
     setIsEnabled(true);
   };
@@ -323,6 +408,14 @@ const QweenMirror = () => {
               <div className="tabs">
                 <button
                   className={`tab-btn ${
+                    activeTab === "beauty" ? "active" : ""
+                  }`}
+                  onClick={() => setActiveTab("beauty")}
+                >
+                  Beauty
+                </button>
+                <button
+                  className={`tab-btn ${
                     activeTab === "makeup" ? "active" : ""
                   }`}
                   onClick={() => setActiveTab("makeup")}
@@ -339,7 +432,39 @@ const QweenMirror = () => {
                 </button>
               </div>
 
-              <div className="effects-container">
+              {activeTab === "beauty" && (
+                <div className="sliders-container">
+                  {(["skin", "shape", "features"] as const).map((section) => (
+                    <Fragment key={section}>
+                      <div className="section-header">
+                        {section.charAt(0).toUpperCase() + section.slice(1)}
+                      </div>
+                      {BEAUTY_GROUPS[section].map(({ key, label }) => (
+                        <div className="slider-group" key={key}>
+                          <label>{label}</label>
+                          <input
+                            type="range"
+                            min="0"
+                            max="100"
+                            value={beautySettings[key]}
+                            onChange={(e) =>
+                              updateBeauty(key, Number(e.target.value))
+                            }
+                          />
+                          <span className="value">{beautySettings[key]}</span>
+                        </div>
+                      ))}
+                    </Fragment>
+                  ))}
+                </div>
+              )}
+
+              <div
+                className="effects-container"
+                style={{
+                  display: activeTab === "beauty" ? "none" : undefined,
+                }}
+              >
                 {activeTab === "makeup" && (
                   <div className="effects-grid">
                     <button
