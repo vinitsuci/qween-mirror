@@ -1,4 +1,9 @@
 declare module "tencentcloud-webar" {
+  /** Returns false if the current browser lacks the hardware-accelerated
+   * WebGL support the SDK relies on. The official docs recommend gating
+   * `new ArSdk(...)` on this. */
+  export function isWebGLSupported(): boolean;
+
   export interface AuthConfig {
     authFunc: () => { signature: string; timestamp: number };
     appId: string;
@@ -35,11 +40,29 @@ declare module "tencentcloud-webar" {
     usm?: number;
   }
 
+  export interface ModuleFlags {
+    beautify?: boolean;
+    segmentation?: boolean;
+    segmentationLevel?: 0 | 1 | 2;
+    handGesture?: boolean;
+    handLandmark?: boolean;
+  }
+
+  export type BackgroundOptions =
+    | { type: "blur" }
+    | { type: "image"; src: string }
+    | { type: "video"; src: string }
+    | { type: "transparent" };
+
   export interface ArSdkConfig {
     auth: AuthConfig;
-    camera: CameraConfig;
-    loading: LoadingConfig;
-    beautify: BeautifyConfig;
+    camera?: CameraConfig;
+    /** Custom Stream Integration: pass a MediaStream/HTMLVideoElement so the
+     * SDK uses your stream instead of opening its own getUserMedia. */
+    input?: MediaStream | HTMLVideoElement | HTMLImageElement | string;
+    module?: ModuleFlags;
+    loading?: LoadingConfig;
+    beautify?: BeautifyConfig;
     language?: "en" | "zh"; // Language for effect/filter names
   }
 
@@ -52,8 +75,15 @@ declare module "tencentcloud-webar" {
   export class ArSdk {
     constructor(config: ArSdkConfig);
     on(
-      event: "created" | "ready" | "error",
-      callback: (data?: any) => void
+      event:
+        | "created"
+        | "cameraReady"
+        | "ready"
+        | "error"
+        | "warning"
+        | "handGesture"
+        | "detectStatusChange",
+      callback: (data?: any) => void,
     ): void;
     getOutput(): Promise<MediaStream>;
     getEffectList(params: { Type: string }): Promise<any[]>;
@@ -63,5 +93,8 @@ declare module "tencentcloud-webar" {
     setEffect(effects: EffectConfig[] | null): void;
     // Official API: setFilter(filterId: string | null, intensity?: number)
     setFilter(filterId: string | null, intensity?: number): void;
+    /** Requires `module.segmentation: true`. Pass null to clear. */
+    setBackground(options: BackgroundOptions | null): void;
+    setSegmentationLevel(level: 0 | 1 | 2): void;
   }
 }

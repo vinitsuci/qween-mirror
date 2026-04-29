@@ -1,7 +1,14 @@
-import QweenMirror from './components/QweenMirror'
+import QweenMirror from "./components/QweenMirror";
+import RawCamera from "./components/RawCamera";
 
 function App() {
-  return <QweenMirror />
+  if (
+    typeof window !== "undefined" &&
+    window.location.pathname.startsWith("/raw")
+  ) {
+    return <RawCamera />;
+  }
+  return <QweenMirror />;
 }
 
-export default App
+export default App;

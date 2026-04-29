@@ -1,5 +1,5 @@
 import { Fragment, useEffect, useRef, useState } from "react";
-import { ArSdk } from "tencentcloud-webar";
+import { ArSdk, isWebGLSupported } from "tencentcloud-webar";
 import { getSignature } from "../utils/auth";
 import "./QweenMirror.css";
 
@@ -22,26 +22,8 @@ interface BeautySettings {
 }
 
 const DEFAULT_BEAUTY: BeautySettings = {
-  whiten: 30,
+  whiten: 20,
   dermabrasion: 50,
-  lift: 0,
-  shave: 0,
-  eye: 0,
-  chin: 0,
-  darkCircle: 0,
-  nasolabialFolds: 0,
-  cheekbone: 0,
-  head: 0,
-  eyeBrightness: 0,
-  lip: 0,
-  forehead: 0,
-  nose: 0,
-  usm: 0,
-};
-
-const ZERO_BEAUTY: BeautySettings = {
-  whiten: 0,
-  dermabrasion: 0,
   lift: 0,
   shave: 0,
   eye: 0,
@@ -101,17 +83,70 @@ interface Filter {
   previewImage?: string;
 }
 
+type BackgroundChoice =
+  | { kind: "none" }
+  | { kind: "blur" }
+  | { kind: "image"; src: string };
+
+interface BackgroundOption {
+  id: string;
+  label: string;
+  thumbnail?: string;
+  choice: BackgroundChoice;
+}
+
+// Unsplash URLs — CORS-enabled, scene-specific, served as JPEG. The `?w=`
+// query controls delivered width: full-size for the SDK, small for thumbs.
+const unsplash = (id: string, w: number) =>
+  `https://images.unsplash.com/${id}?auto=format&fit=crop&w=${w}&q=80`;
+
+const sceneBg = (
+  id: string,
+  label: string,
+  photoId: string,
+): BackgroundOption => ({
+  id,
+  label,
+  thumbnail: unsplash(photoId, 200),
+  choice: { kind: "image", src: unsplash(photoId, 1920) },
+});
+
+const BACKGROUND_PRESETS: BackgroundOption[] = [
+  { id: "none", label: "None", choice: { kind: "none" } },
+  { id: "blur", label: "Blur", choice: { kind: "blur" } },
+  sceneBg("beach", "Beach", "photo-1507525428034-b723cf961d3e"),
+  sceneBg("beach2", "Beach 2", "photo-1519046904884-53103b34b206"),
+  sceneBg("mountain", "Mountain", "photo-1464822759023-fed622ff2c3b"),
+  sceneBg("mountain2", "Mountain 2", "photo-1506905925346-21bda4d32df4"),
+  sceneBg("cafe", "Cafe", "photo-1554118811-1e0d58224f24"),
+  sceneBg("cafe2", "Cafe 2", "photo-1445116572660-236099ec97a0"),
+  sceneBg("party", "Party", "photo-1492684223066-81342ee5ff30"),
+  sceneBg("party2", "Party 2", "photo-1530103862676-de8c9debad1d"),
+];
+
 const QweenMirror = () => {
-  const videoRef = useRef<HTMLVideoElement>(null);
+  const rawVideoRef = useRef<HTMLVideoElement>(null);
+  const arVideoRef = useRef<HTMLVideoElement>(null);
   const arRef = useRef<ArSdk | null>(null);
+  const rawStreamRef = useRef<MediaStream | null>(null);
   const initRef = useRef(false);
   const [isLoading, setIsLoading] = useState(true);
+  const [arReady, setArReady] = useState(false);
+  const [cameraInfo, setCameraInfo] = useState<{
+    width: number;
+    height: number;
+    frameRate: number;
+    label: string;
+  } | null>(null);
+  const [liveFps, setLiveFps] = useState(0);
   const [error, setError] = useState<string>("");
   const [isEnabled, setIsEnabled] = useState(true);
   const [isPanelVisible, setIsPanelVisible] = useState(true);
-  const [activeTab, setActiveTab] = useState<"beauty" | "makeup" | "filters">(
-    "beauty"
-  );
+  const [activeTab, setActiveTab] = useState<
+    "beauty" | "makeup" | "filters" | "background"
+  >("beauty");
+
+  const [selectedBackground, setSelectedBackground] = useState<string>("none");
 
   const [beautySettings, setBeautySettings] =
     useState<BeautySettings>(DEFAULT_BEAUTY);
@@ -136,141 +171,149 @@ const QweenMirror = () => {
       return;
     }
 
-    const initAR = async () => {
-      // Prevent double initialization in React Strict Mode
+    if (!isWebGLSupported()) {
+      setError(
+        "This browser doesn't support hardware-accelerated WebGL. Try Chrome, Safari, or Firefox.",
+      );
+      setIsLoading(false);
+      return;
+    }
+
+    let cancelled = false;
+    const start = async () => {
+      // Guard against React Strict Mode double-mount
       if (initRef.current) return;
       initRef.current = true;
 
       try {
-        // Use the camera's own default resolution. Preflight getUserMedia
-        // with no size constraints, read whatever the camera returns, and
-        // pass that to ArSdk so it never trips OverconstrainedError.
-        let cameraWidth = 640;
-        let cameraHeight = 480;
+        // Open the front camera at its native max resolution. We own this
+        // stream — the raw <video> renders it directly (full quality), and
+        // we hand the same MediaStream to ArSdk via Custom Stream mode so
+        // the SDK can run effects on top without us losing the raw feed.
+        //
+        // Request 1080p directly via `ideal` — browsers honour this when the
+        // sensor supports it and silently fall back when it doesn't. This is
+        // more reliable than opening at the default and trying to bump via
+        // applyConstraints (getCapabilities() returns {} on some Android
+        // browsers, which would skip the bump entirely).
+        // Target 1080p @ 30fps. Asking the camera for its sensor max often
+        // pushes it into full-resolution still mode (e.g., 3264×2448), which
+        // typically caps at ~20fps — a worse trade-off for a real-time
+        // beauty mirror than smooth motion at 1080p.
+        const stream = await navigator.mediaDevices.getUserMedia({
+          video: {
+            facingMode: "user",
+            width: { ideal: 1920 },
+            height: { ideal: 1080 },
+            frameRate: { ideal: 30 },
+          },
+          audio: false,
+        });
+        const track = stream.getVideoTracks()[0];
 
-        try {
-          const stream = await navigator.mediaDevices.getUserMedia({
-            video: true,
-            audio: false,
-          });
-          const track = stream.getVideoTracks()[0];
-          const settings = track.getSettings();
-          if (settings.width && settings.height) {
-            cameraWidth = settings.width;
-            cameraHeight = settings.height;
-          }
-          stream.getTracks().forEach((t) => t.stop());
-          // Brief delay so the camera is fully released before the SDK opens it
-          await new Promise((resolve) => setTimeout(resolve, 150));
-        } catch (e) {
-          console.warn("Camera preflight failed, falling back to 640x480", e);
+        const finalSettings = track.getSettings();
+        if (import.meta.env.DEV) {
+          console.info(
+            `[QweenMirror] camera opened at ${finalSettings.width}×${finalSettings.height} @ ${Math.round(
+              finalSettings.frameRate || 0,
+            )}fps (label: ${track.label})`,
+          );
         }
+        setCameraInfo({
+          width: finalSettings.width || 0,
+          height: finalSettings.height || 0,
+          frameRate: Math.round(finalSettings.frameRate || 0),
+          label: track.label || "(no label)",
+        });
 
-        const initSDK = async (
-          width: number,
-          height: number,
-          retryCount = 0
-        ) => {
+        if (cancelled) {
+          stream.getTracks().forEach((t) => t.stop());
+          return;
+        }
+        rawStreamRef.current = stream;
+        if (rawVideoRef.current) {
+          rawVideoRef.current.srcObject = stream;
+          await rawVideoRef.current.play().catch(() => {});
+        }
+        setIsLoading(false);
+
+        // Spin up ArSdk in Custom Stream mode using the same MediaStream.
+        // The SDK processes effects on top of OUR stream — we can choose
+        // to display either the raw <video> or the SDK output <video>.
+        const ar = new ArSdk({
+          auth: {
+            authFunc: () => getSignature(APPID, TOKEN),
+            appId: APPID,
+            licenseKey: LICENSE_KEY,
+          },
+          input: stream,
+          module: {
+            beautify: true,
+            segmentation: true,
+            segmentationLevel: 1, // 0 = fastest, 2 = best edges; 1 is balanced
+          },
+          beautify: toSdkBeauty(beautyRef.current),
+          language: "en",
+        });
+        arRef.current = ar;
+
+        ar.on("created", async () => {
           try {
-            const ar = new ArSdk({
-              auth: {
-                authFunc: () => getSignature(APPID, TOKEN),
-                appId: APPID,
-                licenseKey: LICENSE_KEY,
-              },
-              camera: {
-                width: width,
-                height: height,
-                mirror: true,
-              },
-              loading: {
-                enable: true,
-                lineWidth: 4,
-              },
-              beautify: toSdkBeauty(beautyRef.current),
-              language: "en", // Set language to English for effect/filter names
-            });
-
-            arRef.current = ar;
-
-            ar.on("created", async () => {
-              // Load preset effects (makeup)
-              try {
-                const presetEffects = await ar.getEffectList({
-                  Type: "Preset",
-                });
-                const makeupList = (presetEffects || []).filter(
-                  (item: any) => item.Label && item.Label.indexOf("Makeup") >= 0
-                );
-                const normalizedEffects: Effect[] = makeupList.map(
-                  (e: any) => ({
-                    id: e.EffectId,
-                    name: e.Name,
-                    coverUrl: e.CoverUrl,
-                  })
-                );
-                setMakeupEffects(normalizedEffects);
-              } catch (err) {
-                console.error("Failed to load effects:", err);
-              }
-
-              // Load filters
-              try {
-                const filterList = await ar.getCommonFilter();
-                const normalizedFilters: Filter[] = (filterList || []).map(
-                  (f: any) => ({
-                    id: f.EffectId,
-                    name: f.Name,
-                    previewImage: f.CoverUrl,
-                  })
-                );
-                setFilters(normalizedFilters);
-              } catch (err) {
-                console.error("Failed to load filters:", err);
-              }
-            });
-
-            ar.on("ready", async () => {
-              setIsLoading(false);
-              try {
-                const mediaStream = await ar.getOutput();
-                if (videoRef.current) {
-                  videoRef.current.srcObject = mediaStream;
-                  await videoRef.current.play().catch(() => {});
-                }
-              } catch (e) {
-                console.error("Error playing video stream:", e);
-              }
-            });
-
-            ar.on("error", (e: any) => {
-              // Handle resolution mismatch with retry
-              if (e.code === 10001206 && retryCount < 2) {
-                const match = e.message?.match(/width (\d+) or height (\d+)/);
-                if (match) {
-                  const newWidth = parseInt(match[1]);
-                  const newHeight = parseInt(match[2]);
-                  if ((ar as any).destroy) {
-                    (ar as any).destroy();
-                  }
-                  setTimeout(
-                    () => initSDK(newWidth, newHeight, retryCount + 1),
-                    500
-                  );
-                  return;
-                }
-              }
-
-              // Show error to user for critical issues only
-              setError(`AR SDK Error: ${e.message || "Unknown error"}`);
-              setIsLoading(false);
-            });
+            // Per the API doc, Label is a server-side filter — pass it
+            // through instead of filtering after the fact.
+            const presetEffects = await ar.getEffectList({
+              Type: "Preset",
+              Label: "Makeup",
+            } as any);
+            setMakeupEffects(
+              (presetEffects || []).map((e: any) => ({
+                id: e.EffectId,
+                name: e.Name,
+                coverUrl: e.CoverUrl,
+              })),
+            );
           } catch (err) {
-            setIsLoading(false);
+            console.error("Failed to load effects:", err);
           }
-        };
+          try {
+            const filterList = await ar.getCommonFilter();
+            setFilters(
+              (filterList || []).map((f: any) => ({
+                id: f.EffectId,
+                name: f.Name,
+                previewImage: f.CoverUrl,
+              })),
+            );
+          } catch (err) {
+            console.error("Failed to load filters:", err);
+          }
+        });
 
-        initSDK(cameraWidth, cameraHeight);
+        ar.on("ready", async () => {
+          try {
+            const arStream = await ar.getOutput();
+            if (arVideoRef.current) {
+              arVideoRef.current.srcObject = arStream;
+              await arVideoRef.current.play().catch(() => {});
+            }
+            setArReady(true);
+          } catch (e) {
+            console.error("Error attaching AR output:", e);
+          }
+        });
+
+        ar.on("error", (e: any) => {
+          setError(`AR SDK Error: ${e.message || "Unknown error"}`);
+        });
+
+        // The doc exposes a `warning` event for performance hints
+        // (e.g. code 50005 = "Detection took too long"). Surface it to
+        // the console in dev so we can spot device-specific slowdowns.
+        if (import.meta.env.DEV) {
+          ar.on("warning", (w: any) => {
+            console.warn(`AR SDK warning [${w?.code}]: ${w?.message}`);
+          });
+        }
       } catch (err) {
         if (err instanceof Error && err.name === "NotAllowedError") {
           setError("Camera access denied. Please allow camera permissions.");
@@ -282,20 +325,66 @@ const QweenMirror = () => {
           setError(
             `Initialization failed: ${
               err instanceof Error ? err.message : "Unknown error"
-            }`
+            }`,
           );
         }
         setIsLoading(false);
       }
     };
 
-    initAR();
+    start();
+
+    // Live FPS counter using requestVideoFrameCallback. Measures the
+    // actual frame delivery rate from the camera (raw video element),
+    // which is what matters for diagnosing dropped frames or throttling.
+    let rvfcId: number | null = null;
+    let rvfcStartTs: number | null = null;
+    let rvfcFrames = 0;
+    const rvfcSupported =
+      typeof HTMLVideoElement !== "undefined" &&
+      "requestVideoFrameCallback" in HTMLVideoElement.prototype;
+    const scheduleRvfc = () => {
+      if (cancelled || !rvfcSupported || !rawVideoRef.current) return;
+      rvfcId = (rawVideoRef.current as any).requestVideoFrameCallback(tickFps);
+    };
+    const tickFps = (
+      _now: DOMHighResTimeStamp,
+      meta: VideoFrameCallbackMetadata,
+    ) => {
+      if (rvfcStartTs === null) rvfcStartTs = meta.mediaTime;
+      rvfcFrames += 1;
+      const elapsed = meta.mediaTime - rvfcStartTs;
+      if (elapsed >= 1) {
+        setLiveFps(Math.round(rvfcFrames / elapsed));
+        rvfcStartTs = meta.mediaTime;
+        rvfcFrames = 0;
+      }
+      scheduleRvfc();
+    };
+    // Wait a tick so the video element is mounted
+    const fpsTimer = window.setTimeout(scheduleRvfc, 500);
 
     return () => {
+      cancelled = true;
+      // Reset so React Strict Mode's remount can re-open the camera. The
+      // `cancelled` flag still prevents the previous mount's in-flight
+      // async work from racing into UI state.
       initRef.current = false;
-      if (arRef.current) {
-        arRef.current = null;
+      window.clearTimeout(fpsTimer);
+      if (
+        rvfcId !== null &&
+        rawVideoRef.current &&
+        "cancelVideoFrameCallback" in rawVideoRef.current
+      ) {
+        (rawVideoRef.current as any).cancelVideoFrameCallback(rvfcId);
       }
+      const ar = arRef.current as ArSdk & { destroy?: () => void };
+      arRef.current = null;
+      try {
+        ar?.destroy?.();
+      } catch {}
+      rawStreamRef.current?.getTracks().forEach((t) => t.stop());
+      rawStreamRef.current = null;
     };
   }, []);
 
@@ -304,8 +393,10 @@ const QweenMirror = () => {
     setIsEnabled(newState);
 
     if (arRef.current) {
+      // When disabled, push all-zeros so beauty visibly turns off without
+      // mutating the slider state the user has dialled in.
       arRef.current.setBeautify(
-        toSdkBeauty(newState ? beautySettings : ZERO_BEAUTY)
+        toSdkBeauty(newState ? beautySettings : DEFAULT_BEAUTY),
       );
     }
   };
@@ -345,25 +436,56 @@ const QweenMirror = () => {
     }
   };
 
+  const handleBackgroundSelect = (option: BackgroundOption) => {
+    setSelectedBackground(option.id);
+    if (!arRef.current) return;
+    switch (option.choice.kind) {
+      case "none":
+        arRef.current.setBackground(null);
+        break;
+      case "blur":
+        arRef.current.setBackground({ type: "blur" });
+        break;
+      case "image":
+        arRef.current.setBackground({
+          type: "image",
+          src: option.choice.src,
+        });
+        break;
+    }
+  };
+
   const handleReset = () => {
     setSelectedMakeup(null);
     setSelectedFilter(null);
+    setSelectedBackground("none");
     setBeautySettings(DEFAULT_BEAUTY);
     beautyRef.current = DEFAULT_BEAUTY;
     if (arRef.current) {
       arRef.current.setEffect(null);
       arRef.current.setFilter(null);
+      arRef.current.setBackground(null);
       arRef.current.setBeautify(toSdkBeauty(DEFAULT_BEAUTY));
     }
     setIsEnabled(true);
   };
+
+  // Any non-zero beauty slider counts as an active beauty effect
+  const hasBeautyEffect =
+    isEnabled && Object.values(beautySettings).some((v) => v > 0);
+  // Show ArSdk's processed output only when there's something for it to do
+  // AND it's ready. Otherwise show the raw stream at native quality.
+  const hasBackground = selectedBackground !== "none";
+  const showAr =
+    arReady &&
+    (hasBeautyEffect || !!selectedMakeup || !!selectedFilter || hasBackground);
 
   return (
     <div className="qween-mirror">
       {isLoading && (
         <div className="loading">
           <div className="spinner"></div>
-          <p>Initializing AR...</p>
+          <p>Opening camera…</p>
         </div>
       )}
 
@@ -374,12 +496,41 @@ const QweenMirror = () => {
         </div>
       )}
 
+      {!isLoading && !error && (
+        <div className="debug-badge">
+          {cameraInfo
+            ? `${cameraInfo.width}×${cameraInfo.height} @ ${liveFps || cameraInfo.frameRate}fps`
+            : "opening camera…"}
+          <span className="debug-badge-mode">
+            {showAr ? "AR" : "RAW"}
+            {arReady ? "" : " (sdk loading…)"}
+          </span>
+        </div>
+      )}
+
       <video
-        ref={videoRef}
-        className="mirror-video"
+        ref={rawVideoRef}
+        className="mirror-video raw-video"
         playsInline
+        muted
+        autoPlay
         crossOrigin="anonymous"
-        style={{ display: isLoading || error ? "none" : "block" }}
+        style={{
+          display: isLoading || error ? "none" : "block",
+          visibility: showAr ? "hidden" : "visible",
+        }}
+      />
+      <video
+        ref={arVideoRef}
+        className="mirror-video ar-video"
+        playsInline
+        muted
+        autoPlay
+        crossOrigin="anonymous"
+        style={{
+          display: isLoading || error ? "none" : "block",
+          visibility: showAr ? "visible" : "hidden",
+        }}
       />
 
       {!isLoading && !error && (
@@ -429,6 +580,14 @@ const QweenMirror = () => {
                   onClick={() => setActiveTab("filters")}
                 >
                   Filters
+                </button>
+                <button
+                  className={`tab-btn ${
+                    activeTab === "background" ? "active" : ""
+                  }`}
+                  onClick={() => setActiveTab("background")}
+                >
+                  Background
                 </button>
               </div>
 
@@ -536,6 +695,35 @@ const QweenMirror = () => {
                     {filters.length === 0 && (
                       <p className="no-effects">No filters available</p>
                     )}
+                  </div>
+                )}
+
+                {activeTab === "background" && (
+                  <div className="effects-grid">
+                    {BACKGROUND_PRESETS.map((option) => (
+                      <button
+                        key={option.id}
+                        className={`effect-item ${
+                          selectedBackground === option.id ? "selected" : ""
+                        }`}
+                        onClick={() => handleBackgroundSelect(option)}
+                      >
+                        {option.choice.kind === "none" ? (
+                          <div className="effect-icon none">✕</div>
+                        ) : option.choice.kind === "blur" ? (
+                          <div className="effect-icon placeholder">🌫️</div>
+                        ) : option.thumbnail ? (
+                          <img
+                            src={option.thumbnail}
+                            alt={option.label}
+                            className="effect-icon"
+                          />
+                        ) : (
+                          <div className="effect-icon placeholder">🖼️</div>
+                        )}
+                        <span className="effect-name">{option.label}</span>
+                      </button>
+                    ))}
                   </div>
                 )}
               </div>
