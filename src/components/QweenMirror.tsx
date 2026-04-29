@@ -21,22 +21,26 @@ interface BeautySettings {
   usm: number;
 }
 
+// "Zoom Touch Up" preset: gentle, no face reshaping. Mirrors what Zoom /
+// Google Meet apply by default — subtle smoothing + mild brightness lift,
+// nothing that crosses into "filtered" territory.
 const DEFAULT_BEAUTY: BeautySettings = {
-  whiten: 20,
-  dermabrasion: 50,
+  whiten: 25, // mild brightness lift on skin
+  dermabrasion: 40, // gentle smoothing, under the "I notice it" threshold
+  darkCircle: 20, // most universally appreciated correction
+  eyeBrightness: 10, // tiny lift, not anime
+  usm: 10, // 10% sharpness to counteract dermabrasion blur
+  nasolabialFolds: 15, // softens harsh-light lines, not age erasure
+  // No face reshaping
   lift: 0,
   shave: 0,
   eye: 0,
   chin: 0,
-  darkCircle: 0,
-  nasolabialFolds: 0,
   cheekbone: 0,
   head: 0,
-  eyeBrightness: 0,
   lip: 0,
   forehead: 0,
   nose: 0,
-  usm: 0,
 };
 
 const toSdkBeauty = (s: BeautySettings) =>
